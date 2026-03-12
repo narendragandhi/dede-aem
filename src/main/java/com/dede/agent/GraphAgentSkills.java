@@ -61,7 +61,8 @@ public class GraphAgentSkills {
         // 4. Detect Dangling Services (Provided but not Consumed)
         List<CodeNode> dangling = graphService.getAllNodes().stream()
             .filter(n -> n.getType() == NodeType.OSGI_SERVICE)
-            .filter(svc -> graphService.getIncomingNodes(svc).stream().noneMatch(c -> c.getType() == NodeType.OSGI_COMPONENT))
+            .filter(svc -> !"true".equals(svc.getProperties().get("isExported"))) // Filter out Public APIs
+            .filter(svc -> graphService.getInboundRelatedNodes(svc, RelationshipType.PROVIDES).stream().noneMatch(c -> c.getType() == NodeType.OSGI_COMPONENT))
             .limit(5)
             .toList();
         if (!dangling.isEmpty()) {
@@ -83,6 +84,7 @@ public class GraphAgentSkills {
         // 6. Detect Zombie Resource Types (Code exists but not in Content)
         graphService.getAllNodes().stream()
             .filter(n -> n.getType() == NodeType.JCR_RESOURCE_TYPE)
+            .filter(res -> !"true".equals(res.getProperties().get("isExported"))) // Filter out Shared Components
             .forEach(res -> {
                 boolean hasContent = !graphService.getInboundRelatedNodes(res, RelationshipType.INSTANTIATED_BY).isEmpty();
                 boolean hasHtl = !graphService.getInboundRelatedNodes(res, RelationshipType.REFERENCES).isEmpty();

@@ -36,27 +36,28 @@ public class GraphService {
     }
 
     public synchronized Relationship addEdge(CodeNode source, CodeNode target, RelationshipType type) {
+        return addEdge(source, target, type, 100);
+    }
+
+    public synchronized Relationship addEdge(CodeNode source, CodeNode target, RelationshipType type, int confidence) {
         addNode(source);
         addNode(target);
 
-        Relationship edge = new Relationship(type);
-        if (!graph.containsEdge(source, target)) {
-            graph.addEdge(source, target, edge);
-        } else {
-            edge = graph.getAllEdges(source, target).stream()
-                    .filter(e -> e.getType() == type)
-                    .findFirst()
-                    .orElseGet(() -> {
-                        Relationship newEdge = new Relationship(type);
-                        graph.addEdge(source, target, newEdge);
-                        return newEdge;
-                    });
+        // For multigraphs, we find if an edge of this type already exists
+        Relationship existing = graph.getAllEdges(source, target).stream()
+                .filter(e -> e.getType() == type)
+                .findFirst()
+                .orElse(null);
+
+        if (existing == null) {
+            Relationship newEdge = new Relationship(type, confidence);
+            graph.addEdge(source, target, newEdge);
+            return newEdge;
         }
-        return edge;
+        return existing;
     }
 
     public void exportToDot(File file) throws IOException {
-        // Sanitize IDs for DOT (no colons, slashes, or dots)
         org.jgrapht.nio.dot.DOTExporter<CodeNode, Relationship> exporter = new org.jgrapht.nio.dot.DOTExporter<>(
             node -> node.getId().replaceAll("[^a-zA-Z0-9_]", "_")
         );

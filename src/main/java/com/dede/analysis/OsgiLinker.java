@@ -6,6 +6,7 @@ import com.dede.core.model.NodeType;
 import com.dede.core.model.Relationship;
 import com.dede.core.model.RelationshipType;
 import com.dede.core.util.VersionUtil;
+import org.jgrapht.Graph;
 import org.springframework.stereotype.Component;
 
 import java.util.Set;
@@ -21,7 +22,8 @@ public class OsgiLinker {
     }
 
     public void link() {
-        Set<CodeNode> bundles = graphService.getAllNodes().stream()
+        Graph<CodeNode, Relationship> graph = graphService.getGraph();
+        Set<CodeNode> bundles = graph.vertexSet().stream()
                 .filter(n -> n.getType() == NodeType.BUNDLE)
                 .collect(Collectors.toSet());
 
@@ -29,14 +31,20 @@ public class OsgiLinker {
 
         for (CodeNode importingBundle : bundles) {
             // 1. Version-Aware Package Linking
-            Set<Relationship> importEdges = graphService.getEdgesOf(importingBundle, RelationshipType.IMPORTS, true);
+            Set<Relationship> importEdges = graph.outgoingEdgesOf(importingBundle).stream()
+                    .filter(e -> e.getType() == RelationshipType.IMPORTS)
+                    .collect(Collectors.toSet());
+
             for (Relationship importEdge : importEdges) {
-                CodeNode pkg = (CodeNode) importEdge.getTarget();
+                CodeNode pkg = graph.getEdgeTarget(importEdge);
                 String range = importEdge.getProperties().get("versionRange");
                 
-                Set<Relationship> exportEdges = graphService.getEdgesOf(pkg, RelationshipType.EXPORTS, false);
+                Set<Relationship> exportEdges = graph.incomingEdgesOf(pkg).stream()
+                        .filter(e -> e.getType() == RelationshipType.EXPORTS)
+                        .collect(Collectors.toSet());
+
                 for (Relationship exportEdge : exportEdges) {
-                    CodeNode exportingBundle = (CodeNode) exportEdge.getSource();
+                    CodeNode exportingBundle = graph.getEdgeSource(exportEdge);
                     String exportVer = exportEdge.getProperties().get("version");
                     
                     if (!importingBundle.equals(exportingBundle) && VersionUtil.matches(exportVer, range)) {

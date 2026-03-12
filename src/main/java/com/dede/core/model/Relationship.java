@@ -2,35 +2,24 @@ package com.dede.core.model;
 
 import lombok.Data;
 import lombok.EqualsAndHashCode;
-import lombok.NoArgsConstructor;
-import org.jgrapht.graph.DefaultEdge;
-
 import java.util.HashMap;
 import java.util.Map;
 
 @Data
-@NoArgsConstructor
-@EqualsAndHashCode(callSuper = false)
-public class Relationship extends DefaultEdge {
-    private RelationshipType type;
-    private Map<String, String> properties = new HashMap<>();
+@EqualsAndHashCode(onlyExplicitlyIncluded = true)
+public class Relationship {
+    @EqualsAndHashCode.Include
+    private final RelationshipType type;
+    
+    private int confidence = 100;
+    private final Map<String, String> properties = new HashMap<>();
 
     public Relationship(RelationshipType type) {
         this.type = type;
     }
 
-    @Override
-    public Object getSource() {
-        return super.getSource();
-    }
-
-    @Override
-    public Object getTarget() {
-        return super.getTarget();
-    }
-
-    @Override
-    public String toString() {
-        return "(" + getSource() + " : " + getTarget() + " : " + type + ")";
+    public Relationship(RelationshipType type, int confidence) {
+        this.type = type;
+        this.confidence = confidence;
     }
 }

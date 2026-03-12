@@ -134,7 +134,7 @@ public class SourceParser {
                             methodName.equals("adaptTo") ? NodeType.SLING_MODEL : NodeType.OSGI_SERVICE, 
                             target, null);
                         graphService.addNode(targetNode);
-                        graphService.addEdge(classNode, targetNode, relType);
+                        graphService.addEdge(classNode, targetNode, relType, 70); // Heuristic confidence
                     });
             }
         });

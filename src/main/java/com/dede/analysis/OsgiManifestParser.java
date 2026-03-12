@@ -84,6 +84,11 @@ public class OsgiManifestParser {
             graphService.addNode(pkgNode);
             Relationship edge = graphService.addEdge(bundleNode, pkgNode, RelationshipType.EXPORTS);
             edge.getProperties().put("version", ver);
+
+            // Export Awareness: Mark all classes in this package as exported
+            graphService.getRelatedNodes(pkgNode, RelationshipType.CONTAINS).forEach(node -> {
+                node.getProperties().put("isExported", "true");
+            });
         });
 
         metadata.imports().keySet().forEach(pkg -> {

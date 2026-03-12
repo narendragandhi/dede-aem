@@ -42,7 +42,7 @@ public class DispatcherParser {
                     String servletPath = urlPattern.split("\\*")[0];
                     CodeNode servletNode = new CodeNode("endpoint:" + servletPath, servletPath, NodeType.OSGI_COMPONENT, servletPath, null);
                     graphService.addNode(servletNode);
-                    graphService.addEdge(filterNode, servletNode, RelationshipType.REFERENCES);
+                    graphService.addEdge(filterNode, servletNode, RelationshipType.REFERENCES, 50); // Pattern-based confidence
                 }
             }
         } catch (Exception e) {

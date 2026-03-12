@@ -45,6 +45,22 @@ The "Configurability Layer" that prevents the tool from being "Too Generic."
 
 ---
 
+## 🛡️ High-Confidence Intelligence (v0.7.0)
+
+To minimize false positives in large-scale repositories (like AEM Core Components), `dede-java` implements a precision scoring system.
+
+### 1. Confidence Scoring
+Every relationship in the graph has a `confidence` score (0-100%):
+- **100% (Verified)**: Relationships found via OSGi/Sling Annotations or Manifest headers.
+- **70% (Heuristic)**: Relationships found via dynamic code analysis (e.g., manual `adaptTo` or `getService` calls).
+- **50% (Pattern-match)**: Relationships found via Dispatcher glob patterns or JCR path heuristics.
+
+### 2. Export Awareness (Library Mode)
+`dede-java` is "Library Aware." If a Java package is listed in the `Export-Package` manifest header, all classes within that package are marked as **`isExported`**.
+- **Impact**: Exported classes are **excluded** from "Dead Code" or "Zombie Code" refactoring suggestions by default, as their consumers likely live in external repositories.
+
+---
+
 ## 🌊 The "Sling Waterfall" Traceability
 One of the most advanced features is the ability to trace dependencies across disparate technologies:
 1. **HTL File** ➡️ `data-sly-use.com.example.Model`

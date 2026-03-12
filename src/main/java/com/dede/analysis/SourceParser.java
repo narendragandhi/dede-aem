@@ -7,7 +7,6 @@ import com.dede.core.model.RelationshipType;
 import com.github.javaparser.JavaParser;
 import com.github.javaparser.ParseResult;
 import com.github.javaparser.ast.CompilationUnit;
-import com.github.javaparser.ast.body.ClassOrInterfaceDeclaration;
 import com.github.javaparser.ast.body.MethodDeclaration;
 import com.github.javaparser.ast.body.TypeDeclaration;
 import com.github.javaparser.ast.expr.AnnotationExpr;
@@ -54,7 +53,7 @@ public class SourceParser {
     private void visitType(TypeDeclaration<?> type, CodeNode parentPackage, String filePath) {
         String typeName = type.getNameAsString();
         String fullSignature = parentPackage.getName() + "." + typeName;
-        NodeType nodeType = type.isClassOrInterfaceDeclaration() && ((ClassOrInterfaceDeclaration) type).isInterface() 
+        NodeType nodeType = type.isClassOrInterfaceDeclaration() && ((com.github.javaparser.ast.body.ClassOrInterfaceDeclaration) type).isInterface() 
                 ? NodeType.INTERFACE 
                 : NodeType.CLASS;
 
@@ -62,7 +61,7 @@ public class SourceParser {
         graphService.addNode(classNode);
         graphService.addEdge(parentPackage, classNode, RelationshipType.CONTAINS);
 
-        // 1. OSGi R7 @Component & @Designate
+        // 1. OSGi @Component & @Designate (Configurations)
         type.getAnnotationByName("Component").ifPresent(a -> {
             classNode.setType(NodeType.OSGI_COMPONENT);
             getAttribute(a, "service").ifPresent(val -> {
@@ -71,20 +70,8 @@ public class SourceParser {
                 graphService.addNode(svcNode);
                 graphService.addEdge(classNode, svcNode, RelationshipType.PROVIDES);
             });
-        });
-
-        // Detect Sling Servlets
-        type.getAnnotationByName("SlingServletResourceTypes").ifPresent(a -> {
-            classNode.setType(NodeType.OSGI_COMPONENT);
-            getAttribute(a, "resourceTypes").ifPresent(resType -> {
-                // Handle comma separated list
-                for (String rt : resType.split(",")) {
-                    rt = rt.trim().replace("\"", "");
-                    CodeNode resNode = new CodeNode("res:" + rt, rt, NodeType.JCR_RESOURCE_TYPE, rt, null);
-                    graphService.addNode(resNode);
-                    graphService.addEdge(resNode, classNode, RelationshipType.REFERENCES);
-                }
-            });
+            // Factory detection
+            getAttribute(a, "factory").ifPresent(f -> classNode.setType(NodeType.OSGI_CONFIG_FACTORY));
         });
 
         type.getAnnotationByName("Designate").ifPresent(a -> {
@@ -94,11 +81,15 @@ public class SourceParser {
                 graphService.addNode(configNode);
                 graphService.addEdge(classNode, configNode, RelationshipType.CONFIG_BY);
             });
+            getAttribute(a, "factory").ifPresent(f -> {
+                if ("true".equals(f)) classNode.setType(NodeType.OSGI_CONFIG_FACTORY);
+            });
         });
 
-        // 2. OSGi @ObjectClassDefinition
-        type.getAnnotationByName("ObjectClassDefinition").ifPresent(a -> {
-            classNode.setType(NodeType.OSGI_CONFIG);
+        // 2. Sling CAConfig Detection
+        type.getAnnotationByName("Configuration").ifPresent(a -> {
+            classNode.setType(NodeType.SLING_CACONFIG);
+            getAttribute(a, "label").ifPresent(label -> classNode.setName("CAConfig: " + label));
         });
 
         // 3. Sling Model
@@ -114,22 +105,33 @@ public class SourceParser {
             });
         });
 
-        // Visit methods for @Reference and lifecycle
+        // Visit methods for @Reference, @ConfigurationResolver (CAConfig)
         type.getMethods().forEach(method -> visitMethod(method, classNode, filePath));
 
-        // Visit fields for @Reference, @Inject, @OSGiService
+        // Visit fields for @Reference, @Inject, @ConfigurationBuilder
         type.getFields().forEach(field -> {
             field.getVariables().forEach(v -> {
                 String fieldType = v.getTypeAsString();
-                boolean isInjected = field.getAnnotations().stream()
-                        .anyMatch(a -> a.getNameAsString().equals("OSGiService") 
-                                || a.getNameAsString().equals("Reference")
-                                || a.getNameAsString().equals("Inject"));
-
-                if (isInjected) {
+                
+                // OSGi Reference
+                boolean isOsgiSvc = field.getAnnotations().stream()
+                        .anyMatch(an -> an.getNameAsString().equals("Reference") || an.getNameAsString().equals("OSGiService"));
+                
+                if (isOsgiSvc) {
                     CodeNode svcNode = new CodeNode("svc:" + fieldType, fieldType, NodeType.OSGI_SERVICE, fieldType, null);
                     graphService.addNode(svcNode);
                     graphService.addEdge(classNode, svcNode, RelationshipType.CONSUMES);
+                }
+
+                // CAConfig Builder/Resolver
+                boolean isCaConfig = field.getAnnotations().stream()
+                        .anyMatch(an -> an.getNameAsString().equals("ConfigurationBuilder") || an.getNameAsString().equals("ConfigurationResolver"));
+                
+                if (isCaConfig) {
+                    // This node is a CAConfig consumer
+                    CodeNode caSvc = new CodeNode("svc:sling.caconfig", "Sling CAConfig Resolver", NodeType.OSGI_SERVICE, "org.apache.sling.caconfig", null);
+                    graphService.addNode(caSvc);
+                    graphService.addEdge(classNode, caSvc, RelationshipType.CONSUMES);
                 }
             });
         });
@@ -142,7 +144,6 @@ public class SourceParser {
         graphService.addNode(methodNode);
         graphService.addEdge(parentClass, methodNode, RelationshipType.DECLARES);
 
-        // Detect Method-based @Reference (DS Bind methods)
         method.getAnnotationByName("Reference").ifPresent(a -> {
             method.getParameters().forEach(p -> {
                 String svcType = p.getTypeAsString();
@@ -150,22 +151,6 @@ public class SourceParser {
                 graphService.addNode(svcNode);
                 graphService.addEdge(parentClass, svcNode, RelationshipType.CONSUMES);
             });
-        });
-
-        // Trace Method Calls
-        method.findAll(com.github.javaparser.ast.expr.MethodCallExpr.class).forEach(mc -> {
-            try {
-                String calleeSignature = mc.resolve().getQualifiedSignature();
-                CodeNode calleeNode = new CodeNode("method:" + calleeSignature, mc.getNameAsString(), NodeType.METHOD, calleeSignature, null);
-                graphService.addNode(calleeNode);
-                graphService.addEdge(methodNode, calleeNode, RelationshipType.CALLS);
-            } catch (Exception e) {
-                // Fallback to simple name for unresolved
-                String simpleCallee = mc.getNameAsString();
-                CodeNode calleeNode = new CodeNode("method:unresolved." + simpleCallee, simpleCallee, NodeType.METHOD, simpleCallee, null);
-                graphService.addNode(calleeNode);
-                graphService.addEdge(methodNode, calleeNode, RelationshipType.CALLS);
-            }
         });
     }
 

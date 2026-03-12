@@ -4,27 +4,49 @@ import com.dede.core.GraphService;
 import com.dede.core.model.CodeNode;
 import com.dede.core.model.NodeType;
 import com.dede.core.model.RelationshipType;
+import com.dede.core.model.AnnotationMapping;
 import com.github.javaparser.JavaParser;
 import com.github.javaparser.ParseResult;
 import com.github.javaparser.ast.CompilationUnit;
 import com.github.javaparser.ast.body.MethodDeclaration;
 import com.github.javaparser.ast.body.TypeDeclaration;
 import com.github.javaparser.ast.expr.AnnotationExpr;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.stereotype.Component;
 
+import javax.annotation.PostConstruct;
+import java.io.File;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.Optional;
+import java.util.ArrayList;
+import java.util.List;
 
 @Component
 public class SourceParser {
 
     private final GraphService graphService;
     private final JavaParser javaParser;
+    private final ObjectMapper objectMapper;
+    private AnnotationMapping customMappings;
 
     public SourceParser(GraphService graphService) {
         this.graphService = graphService;
         this.javaParser = new JavaParser();
+        this.objectMapper = new ObjectMapper();
+    }
+
+    @PostConstruct
+    public void init() {
+        try {
+            File configFile = new File("dede-annotations.json");
+            if (configFile.exists()) {
+                this.customMappings = objectMapper.readValue(configFile, AnnotationMapping.class);
+                System.out.println("Loaded " + customMappings.getMappings().size() + " custom annotation mappings.");
+            }
+        } catch (IOException e) {
+            System.err.println("Failed to load custom annotation mappings: " + e.getMessage());
+        }
     }
 
     public void parse(Path filePath) {
@@ -61,7 +83,7 @@ public class SourceParser {
         graphService.addNode(classNode);
         graphService.addEdge(parentPackage, classNode, RelationshipType.CONTAINS);
 
-        // 1. OSGi @Component & @Designate (Configurations)
+        // 1. Core OSGi Support
         type.getAnnotationByName("Component").ifPresent(a -> {
             classNode.setType(NodeType.OSGI_COMPONENT);
             getAttribute(a, "service").ifPresent(val -> {
@@ -69,65 +91,24 @@ public class SourceParser {
                 CodeNode svcNode = new CodeNode("svc:" + svc, svc, NodeType.OSGI_SERVICE, svc, null);
                 graphService.addNode(svcNode);
                 graphService.addEdge(classNode, svcNode, RelationshipType.PROVIDES);
+            });
+        });
 
-                // Detect AEM Workflow Process
-                if (svc.contains("WorkflowProcess")) {
-                    getAttribute(a, "property").ifPresent(prop -> {
-                        if (prop.contains("process.label")) {
-                            String label = prop.split("=")[1].replace("\"", "");
-                            CodeNode wfNode = new CodeNode("wf:" + label, label, NodeType.WORKFLOW_PROCESS, label, filePath);
-                            graphService.addNode(wfNode);
-                            graphService.addEdge(classNode, wfNode, RelationshipType.PROVIDES);
+        // 2. Configurable Dynamic Support
+        if (customMappings != null) {
+            for (AnnotationMapping.Mapping m : customMappings.getMappings()) {
+                type.getAnnotationByName(m.getAnnotationName()).ifPresent(a -> {
+                    getAttribute(a, m.getAttributeName()).ifPresent(val -> {
+                        for (String part : val.split(",")) {
+                            String cleanVal = part.trim().replace("\"", "");
+                            CodeNode dynamicNode = new CodeNode(m.getIdPrefix() + cleanVal, cleanVal, NodeType.valueOf(m.getNodeType()), cleanVal, null);
+                            graphService.addNode(dynamicNode);
+                            graphService.addEdge(classNode, dynamicNode, RelationshipType.valueOf(m.getRelationship()));
                         }
                     });
-                }
-
-                // Detect Sling Job Consumer
-                if (svc.contains("JobConsumer") || svc.contains("JobExecutor")) {
-                    getAttribute(a, "property").ifPresent(prop -> {
-                        if (prop.contains("job.topics")) {
-                            String topic = prop.split("=")[1].replace("\"", "");
-                            CodeNode jobNode = new CodeNode("job:" + topic, topic, NodeType.SLING_JOB, topic, filePath);
-                            graphService.addNode(jobNode);
-                            graphService.addEdge(classNode, jobNode, RelationshipType.PROVIDES);
-                        }
-                    });
-                }
-            });
-            // Factory detection
-            getAttribute(a, "factory").ifPresent(f -> classNode.setType(NodeType.OSGI_CONFIG_FACTORY));
-        });
-
-        // Detect Sling Servlets
-        type.getAnnotationByName("SlingServletResourceTypes").ifPresent(a -> {
-            classNode.setType(NodeType.OSGI_COMPONENT);
-            getAttribute(a, "resourceTypes").ifPresent(resType -> {
-                for (String rt : resType.split(",")) {
-                    rt = rt.trim().replace("\"", "");
-                    CodeNode resNode = new CodeNode("res:" + rt, rt, NodeType.JCR_RESOURCE_TYPE, rt, null);
-                    graphService.addNode(resNode);
-                    graphService.addEdge(resNode, classNode, RelationshipType.REFERENCES);
-                }
-            });
-        });
-
-        type.getAnnotationByName("Designate").ifPresent(a -> {
-            getAttribute(a, "ocd").ifPresent(ocd -> {
-                String configName = ocd.replace(".class", "");
-                CodeNode configNode = new CodeNode("cfg:" + configName, configName, NodeType.OSGI_CONFIG, configName, null);
-                graphService.addNode(configNode);
-                graphService.addEdge(classNode, configNode, RelationshipType.CONFIG_BY);
-            });
-            getAttribute(a, "factory").ifPresent(f -> {
-                if ("true".equals(f)) classNode.setType(NodeType.OSGI_CONFIG_FACTORY);
-            });
-        });
-
-        // 2. Sling CAConfig Detection
-        type.getAnnotationByName("Configuration").ifPresent(a -> {
-            classNode.setType(NodeType.SLING_CACONFIG);
-            getAttribute(a, "label").ifPresent(label -> classNode.setName("CAConfig: " + label));
-        });
+                });
+            }
+        }
 
         // 3. Sling Model
         type.getAnnotationByName("Model").ifPresent(a -> {
@@ -142,33 +123,17 @@ public class SourceParser {
             });
         });
 
-        // Visit methods for @Reference, @ConfigurationResolver (CAConfig)
+        // Visit methods & fields...
         type.getMethods().forEach(method -> visitMethod(method, classNode, filePath));
-
-        // Visit fields for @Reference, @Inject, @ConfigurationBuilder
         type.getFields().forEach(field -> {
             field.getVariables().forEach(v -> {
                 String fieldType = v.getTypeAsString();
-                
-                // OSGi Reference
-                boolean isOsgiSvc = field.getAnnotations().stream()
-                        .anyMatch(an -> an.getNameAsString().equals("Reference") || an.getNameAsString().equals("OSGiService"));
-                
-                if (isOsgiSvc) {
+                boolean isInjected = field.getAnnotations().stream()
+                        .anyMatch(an -> an.getNameAsString().matches("Reference|OSGiService|Inject"));
+                if (isInjected) {
                     CodeNode svcNode = new CodeNode("svc:" + fieldType, fieldType, NodeType.OSGI_SERVICE, fieldType, null);
                     graphService.addNode(svcNode);
                     graphService.addEdge(classNode, svcNode, RelationshipType.CONSUMES);
-                }
-
-                // CAConfig Builder/Resolver
-                boolean isCaConfig = field.getAnnotations().stream()
-                        .anyMatch(an -> an.getNameAsString().equals("ConfigurationBuilder") || an.getNameAsString().equals("ConfigurationResolver"));
-                
-                if (isCaConfig) {
-                    // This node is a CAConfig consumer
-                    CodeNode caSvc = new CodeNode("svc:sling.caconfig", "Sling CAConfig Resolver", NodeType.OSGI_SERVICE, "org.apache.sling.caconfig", null);
-                    graphService.addNode(caSvc);
-                    graphService.addEdge(classNode, caSvc, RelationshipType.CONSUMES);
                 }
             });
         });
@@ -178,25 +143,8 @@ public class SourceParser {
         String methodName = method.getNameAsString();
         String fullSignature = parentClass.getSignature() + "." + methodName + "()";
         CodeNode methodNode = new CodeNode("method:" + fullSignature, methodName, NodeType.METHOD, fullSignature, filePath);
-
-        // Mark OSGi Lifecycle methods
-        if (method.getAnnotationByName("Activate").isPresent() || 
-            method.getAnnotationByName("Deactivate").isPresent() || 
-            method.getAnnotationByName("Modified").isPresent()) {
-            methodNode.setName("[LIFECYCLE] " + methodName);
-        }
-
         graphService.addNode(methodNode);
         graphService.addEdge(parentClass, methodNode, RelationshipType.DECLARES);
-
-        method.getAnnotationByName("Reference").ifPresent(a -> {
-            method.getParameters().forEach(p -> {
-                String svcType = p.getTypeAsString();
-                CodeNode svcNode = new CodeNode("svc:" + svcType, svcType, NodeType.OSGI_SERVICE, svcType, null);
-                graphService.addNode(svcNode);
-                graphService.addEdge(parentClass, svcNode, RelationshipType.CONSUMES);
-            });
-        });
     }
 
     private Optional<String> getAttribute(AnnotationExpr a, String attrName) {

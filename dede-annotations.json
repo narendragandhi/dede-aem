@@ -1,0 +1,25 @@
+{
+  "mappings": [
+    {
+      "annotationName": "HttpWhiteboardServletPattern",
+      "nodeType": "OSGI_COMPONENT",
+      "attributeName": "value",
+      "relationship": "PROVIDES",
+      "idPrefix": "endpoint:"
+    },
+    {
+      "annotationName": "HttpWhiteboardResource",
+      "nodeType": "OSGI_COMPONENT",
+      "attributeName": "pattern",
+      "relationship": "PROVIDES",
+      "idPrefix": "static-res:"
+    },
+    {
+      "annotationName": "JaxrsResource",
+      "nodeType": "OSGI_COMPONENT",
+      "attributeName": "value",
+      "relationship": "PROVIDES",
+      "idPrefix": "api-resource:"
+    }
+  ]
+}

@@ -1,10 +1,7 @@
 package com.dede.analysis;
 
 import com.dede.core.GraphService;
-import com.dede.core.model.CodeNode;
-import com.dede.core.model.NodeType;
-import com.dede.core.model.RelationshipType;
-import com.dede.core.model.AnnotationMapping;
+import com.dede.core.model.*;
 import com.github.javaparser.JavaParser;
 import com.github.javaparser.ParseResult;
 import com.github.javaparser.ast.CompilationUnit;
@@ -14,13 +11,10 @@ import com.github.javaparser.ast.expr.AnnotationExpr;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.stereotype.Component;
 
-import javax.annotation.PostConstruct;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Path;
-import java.util.Optional;
-import java.util.ArrayList;
-import java.util.List;
+import java.util.*;
 
 @Component
 public class SourceParser {
@@ -28,7 +22,7 @@ public class SourceParser {
     private final GraphService graphService;
     private final JavaParser javaParser;
     private final ObjectMapper objectMapper;
-    private AnnotationMapping customMappings;
+    private final List<AnnotationMapping.Mapping> activeMappings = new ArrayList<>();
 
     public SourceParser(GraphService graphService) {
         this.graphService = graphService;
@@ -36,16 +30,28 @@ public class SourceParser {
         this.objectMapper = new ObjectMapper();
     }
 
-    @PostConstruct
-    public void init() {
-        try {
-            File configFile = new File("dede-annotations.json");
-            if (configFile.exists()) {
-                this.customMappings = objectMapper.readValue(configFile, AnnotationMapping.class);
-                System.out.println("Loaded " + customMappings.getMappings().size() + " custom annotation mappings.");
+    /**
+     * Load multiple profiles and merge their mappings.
+     */
+    public void loadProfiles(String[] profileNames) {
+        activeMappings.clear();
+        for (String name : profileNames) {
+            try {
+                File profileFile = new File("profiles/" + name + ".json");
+                if (!profileFile.exists()) {
+                    profileFile = new File(name); // Try direct path
+                }
+                
+                if (profileFile.exists()) {
+                    AnnotationMapping mapping = objectMapper.readValue(profileFile, AnnotationMapping.class);
+                    activeMappings.addAll(mapping.getMappings());
+                    System.out.println("Loaded profile: " + name + " (" + mapping.getMappings().size() + " mappings)");
+                } else {
+                    System.err.println("Profile not found: " + name);
+                }
+            } catch (IOException e) {
+                System.err.println("Failed to load profile " + name + ": " + e.getMessage());
             }
-        } catch (IOException e) {
-            System.err.println("Failed to load custom annotation mappings: " + e.getMessage());
         }
     }
 
@@ -83,7 +89,7 @@ public class SourceParser {
         graphService.addNode(classNode);
         graphService.addEdge(parentPackage, classNode, RelationshipType.CONTAINS);
 
-        // 1. Core OSGi Support
+        // 1. Core OSGi (always on)
         type.getAnnotationByName("Component").ifPresent(a -> {
             classNode.setType(NodeType.OSGI_COMPONENT);
             getAttribute(a, "service").ifPresent(val -> {
@@ -94,36 +100,21 @@ public class SourceParser {
             });
         });
 
-        // 2. Configurable Dynamic Support
-        if (customMappings != null) {
-            for (AnnotationMapping.Mapping m : customMappings.getMappings()) {
-                type.getAnnotationByName(m.getAnnotationName()).ifPresent(a -> {
-                    getAttribute(a, m.getAttributeName()).ifPresent(val -> {
-                        for (String part : val.split(",")) {
-                            String cleanVal = part.trim().replace("\"", "");
-                            CodeNode dynamicNode = new CodeNode(m.getIdPrefix() + cleanVal, cleanVal, NodeType.valueOf(m.getNodeType()), cleanVal, null);
-                            graphService.addNode(dynamicNode);
-                            graphService.addEdge(classNode, dynamicNode, RelationshipType.valueOf(m.getRelationship()));
-                        }
-                    });
+        // 2. Composed Profile Mappings
+        for (AnnotationMapping.Mapping m : activeMappings) {
+            type.getAnnotationByName(m.getAnnotationName()).ifPresent(a -> {
+                getAttribute(a, m.getAttributeName()).ifPresent(val -> {
+                    for (String part : val.split(",")) {
+                        String cleanVal = part.trim().replace("\"", "");
+                        CodeNode dynamicNode = new CodeNode(m.getIdPrefix() + cleanVal, cleanVal, NodeType.valueOf(m.getNodeType()), cleanVal, null);
+                        graphService.addNode(dynamicNode);
+                        graphService.addEdge(classNode, dynamicNode, RelationshipType.valueOf(m.getRelationship()));
+                    }
                 });
-            }
+            });
         }
 
-        // 3. Sling Model
-        type.getAnnotationByName("Model").ifPresent(a -> {
-            classNode.setType(NodeType.SLING_MODEL);
-            getAttribute(a, "resourceType").ifPresent(resType -> {
-                for (String rt : resType.split(",")) {
-                    rt = rt.trim().replace("\"", "");
-                    CodeNode resNode = new CodeNode("res:" + rt, rt, NodeType.JCR_RESOURCE_TYPE, rt, null);
-                    graphService.addNode(resNode);
-                    graphService.addEdge(resNode, classNode, RelationshipType.ADAPTS_TO);
-                }
-            });
-        });
-
-        // Visit methods & fields...
+        // Methods & Fields...
         type.getMethods().forEach(method -> visitMethod(method, classNode, filePath));
         type.getFields().forEach(field -> {
             field.getVariables().forEach(v -> {

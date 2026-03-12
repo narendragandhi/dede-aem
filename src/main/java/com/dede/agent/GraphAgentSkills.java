@@ -2,9 +2,11 @@ package com.dede.agent;
 
 import com.dede.core.GraphService;
 import com.dede.core.model.CodeNode;
+import com.dede.core.model.NodeType;
 import com.dede.core.model.RelationshipType;
 import org.springframework.stereotype.Component;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -19,7 +21,70 @@ public class GraphAgentSkills {
     }
 
     /**
-     * Detects circular dependencies between OSGi bundles.
+     * AI-Driven Refactoring Suggestions based on Graph Topology
+     */
+    public List<String> suggestRefactoring() {
+        List<String> suggestions = new ArrayList<>();
+
+        // 1. Detect God Bundles (High Fan-In/Fan-Out)
+        graphService.getAllNodes().stream()
+            .filter(n -> n.getType() == NodeType.BUNDLE)
+            .forEach(bundle -> {
+                int fanIn = graphService.getIncomingNodes(bundle).size();
+                int fanOut = graphService.getOutgoingNodes(bundle).size();
+                if (fanIn + fanOut > 50) {
+                    suggestions.add("REFACTOR [God Bundle]: Bundle '" + bundle.getName() + "' has high coupling (" + 
+                        (fanIn + fanOut) + " edges). Suggestion: Split into 'api', 'core-logic', and 'util' bundles.");
+                }
+            });
+
+        // 2. Detect Circular Dependencies
+        Set<Set<CodeNode>> cycles = graphService.findCycles();
+        if (!cycles.isEmpty()) {
+            cycles.forEach(cycle -> {
+                String ids = cycle.stream().map(CodeNode::getId).collect(Collectors.joining(", "));
+                suggestions.add("REFACTOR [Circular Dependency]: Cycle detected between [" + ids + 
+                    "]. Suggestion: Move shared interfaces to a 'common-api' bundle to break the loop.");
+            });
+        }
+
+        // 3. Detect Legacy AEM APIs (Cloud Readiness)
+        List<CodeNode> legacyNodes = graphService.getAllNodes().stream()
+            .filter(n -> n.getId().contains("com.day.cq"))
+            .limit(5)
+            .toList();
+        if (!legacyNodes.isEmpty()) {
+            suggestions.add("REFACTOR [AEM Cloud]: Legacy 'com.day.cq' APIs found in " + legacyNodes.size() + 
+                " locations. Suggestion: Modernize to 'com.adobe.granite' or 'org.apache.sling' equivalents.");
+        }
+
+        // 4. Detect Dangling Services (Provided but not Consumed)
+        List<CodeNode> dangling = graphService.getAllNodes().stream()
+            .filter(n -> n.getType() == NodeType.OSGI_SERVICE)
+            .filter(svc -> graphService.getIncomingNodes(svc).stream().noneMatch(c -> c.getType() == NodeType.OSGI_COMPONENT))
+            .limit(5)
+            .toList();
+        if (!dangling.isEmpty()) {
+            suggestions.add("REFACTOR [Dead Code]: Found " + dangling.size() + " OSGi services with zero consumers. " +
+                "Suggestion: Verify if these are still needed or safely remove them to reduce OSGi registry bloat.");
+        }
+
+        // 5. Detect ClientLib Bloat
+        graphService.getAllNodes().stream()
+            .filter(n -> n.getType() == NodeType.CLIENTLIB)
+            .forEach(lib -> {
+                long embeds = graphService.getOutgoingNodes(lib).size();
+                if (embeds > 10) {
+                    suggestions.add("REFACTOR [ClientLib Bloat]: Category '" + lib.getName() + "' embeds " + embeds + 
+                        " other libraries. Suggestion: Consider 'dependencies' instead of 'embed' to improve page load caching.");
+                }
+            });
+
+        return suggestions;
+    }
+
+    /**
+     * Original Skills...
      */
     public String detectCycles() {
         Set<Set<CodeNode>> cycles = graphService.findCycles();
@@ -31,9 +96,6 @@ public class GraphAgentSkills {
                         .collect(Collectors.joining("\n- "));
     }
 
-    /**
-     * Analyzes the codebase for AEM as a Cloud Service readiness, flagging deprecated APIs.
-     */
     public String checkCloudReadiness() {
         List<String> legacyPackages = List.of("com.day.cq", "com.adobe.granite.workflow.api");
         List<CodeNode> violations = graphService.getAllNodes().stream()
@@ -48,9 +110,6 @@ public class GraphAgentSkills {
                 "\nRecommendation: Migrate to modern com.adobe.granite or com.adobe.cq packages.";
     }
 
-    /**
-     * Calculates the blast radius of a change to a specific node.
-     */
     public String analyzeImpact(String nodeId) {
         return graphService.findNodeById(nodeId).map(node -> {
             Set<CodeNode> direct = graphService.getIncomingNodes(node);

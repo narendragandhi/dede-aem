@@ -3,6 +3,7 @@ package com.dede.cli;
 import com.dede.analysis.ProjectScanner;
 import com.dede.core.GraphService;
 import com.dede.governance.GovernanceEngine;
+import com.dede.agent.GraphAgentSkills;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.stereotype.Component;
 
@@ -16,14 +17,16 @@ public class DedeCli implements CommandLineRunner {
     private final com.dede.core.cache.MetadataCache cache;
     private final com.dede.analysis.OsgiLinker osgiLinker;
     private final GovernanceEngine governanceEngine;
+    private final GraphAgentSkills graphAgentSkills;
 
     public DedeCli(ProjectScanner projectScanner, GraphService graphService, com.dede.core.cache.MetadataCache cache, 
-                   com.dede.analysis.OsgiLinker osgiLinker, GovernanceEngine governanceEngine) {
+                   com.dede.analysis.OsgiLinker osgiLinker, GovernanceEngine governanceEngine, GraphAgentSkills graphAgentSkills) {
         this.projectScanner = projectScanner;
         this.graphService = graphService;
         this.cache = cache;
         this.osgiLinker = osgiLinker;
         this.governanceEngine = governanceEngine;
+        this.graphAgentSkills = graphAgentSkills;
     }
 
     @Override
@@ -58,6 +61,14 @@ public class DedeCli implements CommandLineRunner {
                 System.err.println("❌ Architectural Guardrail Violations found:");
                 violations.forEach(System.err::println);
             }
+        }
+
+        System.out.println("\n--- 🤖 AI Refactoring Suggestions ---");
+        List<String> suggestions = graphAgentSkills.suggestRefactoring();
+        if (suggestions.isEmpty()) {
+            System.out.println("No refactoring suggestions. Architecture looks solid!");
+        } else {
+            suggestions.forEach(System.out::println);
         }
 
         System.out.println("\n--- OSGi Bundles Found ---");

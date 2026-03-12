@@ -11,7 +11,6 @@ import com.github.javaparser.ast.body.ClassOrInterfaceDeclaration;
 import com.github.javaparser.ast.body.MethodDeclaration;
 import com.github.javaparser.ast.body.TypeDeclaration;
 import com.github.javaparser.ast.expr.AnnotationExpr;
-import com.github.javaparser.ast.expr.MemberValuePair;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
@@ -66,14 +65,25 @@ public class SourceParser {
         // 1. OSGi R7 @Component & @Designate
         type.getAnnotationByName("Component").ifPresent(a -> {
             classNode.setType(NodeType.OSGI_COMPONENT);
-            // Detect provided services
-            type.getAnnotationByName("Component").ifPresent(comp -> {
-                getAttribute(comp, "service").ifPresent(val -> {
-                    String svc = val.replace(".class", "");
-                    CodeNode svcNode = new CodeNode("svc:" + svc, svc, NodeType.OSGI_SERVICE, svc, null);
-                    graphService.addNode(svcNode);
-                    graphService.addEdge(classNode, svcNode, RelationshipType.PROVIDES);
-                });
+            getAttribute(a, "service").ifPresent(val -> {
+                String svc = val.replace(".class", "");
+                CodeNode svcNode = new CodeNode("svc:" + svc, svc, NodeType.OSGI_SERVICE, svc, null);
+                graphService.addNode(svcNode);
+                graphService.addEdge(classNode, svcNode, RelationshipType.PROVIDES);
+            });
+        });
+
+        // Detect Sling Servlets
+        type.getAnnotationByName("SlingServletResourceTypes").ifPresent(a -> {
+            classNode.setType(NodeType.OSGI_COMPONENT);
+            getAttribute(a, "resourceTypes").ifPresent(resType -> {
+                // Handle comma separated list
+                for (String rt : resType.split(",")) {
+                    rt = rt.trim().replace("\"", "");
+                    CodeNode resNode = new CodeNode("res:" + rt, rt, NodeType.JCR_RESOURCE_TYPE, rt, null);
+                    graphService.addNode(resNode);
+                    graphService.addEdge(resNode, classNode, RelationshipType.REFERENCES);
+                }
             });
         });
 
@@ -95,9 +105,12 @@ public class SourceParser {
         type.getAnnotationByName("Model").ifPresent(a -> {
             classNode.setType(NodeType.SLING_MODEL);
             getAttribute(a, "resourceType").ifPresent(resType -> {
-                CodeNode resNode = new CodeNode("res:" + resType, resType, NodeType.JCR_RESOURCE_TYPE, resType, null);
-                graphService.addNode(resNode);
-                graphService.addEdge(resNode, classNode, RelationshipType.ADAPTS_TO);
+                for (String rt : resType.split(",")) {
+                    rt = rt.trim().replace("\"", "");
+                    CodeNode resNode = new CodeNode("res:" + rt, rt, NodeType.JCR_RESOURCE_TYPE, rt, null);
+                    graphService.addNode(resNode);
+                    graphService.addEdge(resNode, classNode, RelationshipType.ADAPTS_TO);
+                }
             });
         });
 

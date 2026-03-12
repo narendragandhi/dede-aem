@@ -17,5 +17,6 @@ public enum RelationshipType {
     ADAPTS_TO,    // JCR Resource Type -> Sling Model
     REFERENCES,   // JCR Resource Type -> JCR Resource Type
     DEPENDS_ON,   // ClientLib -> ClientLib
-    EMBEDS        // ClientLib -> ClientLib
+    EMBEDS,       // ClientLib -> ClientLib
+    EXPOSES       // Vulnerability -> Bundle/ClientLib
 }

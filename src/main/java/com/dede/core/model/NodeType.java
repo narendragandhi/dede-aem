@@ -14,5 +14,6 @@ public enum NodeType {
     JCR_RESOURCE_TYPE,
     SLING_MODEL,
     HTL_FILE,
-    CLIENTLIB
+    CLIENTLIB,
+    VULNERABILITY
 }

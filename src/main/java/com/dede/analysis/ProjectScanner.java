@@ -16,14 +16,16 @@ public class ProjectScanner {
     private final JarScanner jarScanner;
     private final SlingResourceParser slingResourceParser;
     private final SlingHtlParser slingHtlParser;
+    private final SlingClientLibParser clientLibParser;
 
     public ProjectScanner(SourceParser sourceParser, OsgiManifestParser manifestParser, JarScanner jarScanner, 
-                          SlingResourceParser slingResourceParser, SlingHtlParser slingHtlParser) {
+                          SlingResourceParser slingResourceParser, SlingHtlParser slingHtlParser, SlingClientLibParser clientLibParser) {
         this.sourceParser = sourceParser;
         this.manifestParser = manifestParser;
         this.jarScanner = jarScanner;
         this.slingResourceParser = slingResourceParser;
         this.slingHtlParser = slingHtlParser;
+        this.clientLibParser = clientLibParser;
     }
 
     public void scan(String rootPath) {
@@ -47,6 +49,7 @@ public class ProjectScanner {
                          jarScanner.scan(p);
                      } else if (fileName.endsWith(".content.xml")) {
                          slingResourceParser.parse(p);
+                         clientLibParser.parse(p);
                      } else if (fileName.endsWith(".html")) {
                          slingHtlParser.parse(p);
                      }

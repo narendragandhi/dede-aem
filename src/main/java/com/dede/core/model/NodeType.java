@@ -13,5 +13,6 @@ public enum NodeType {
     OSGI_CONFIG,
     JCR_RESOURCE_TYPE,
     SLING_MODEL,
-    HTL_FILE
+    HTL_FILE,
+    CLIENTLIB
 }

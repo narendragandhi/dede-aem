@@ -1,0 +1,18 @@
+{
+  "rules": [
+    {
+      "id": "RULE-001",
+      "description": "Legacy CQ APIs are forbidden",
+      "sourcePattern": ".*",
+      "targetPattern": "pkg:com.day.cq.*",
+      "constraint": "DENY"
+    },
+    {
+      "id": "RULE-002",
+      "description": "Circular wiring between core and ui bundles is forbidden",
+      "sourcePattern": "bundle:.*core",
+      "targetPattern": "bundle:.*ui",
+      "constraint": "DENY"
+    }
+  ]
+}

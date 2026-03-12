@@ -1,41 +1,58 @@
-# dede-java: Architectural Intelligence for Java
+# Dede-Java: The Architectural Intelligence Platform for AEM
 
-`dede-java` is a high-performance dependency explorer designed for massive, modular Java ecosystems (OSGi, AEM, Karaf). It maps explicit code calls and implicit service wiring into a unified impact graph.
+## 1. Overview
+Dede-Java is a high-performance architectural scanner and intelligence engine designed for complex AEM and OSGi-based ecosystems. It transforms static source code and artifacts into a **Directed Multigraph**, enabling deep traceability and impact analysis.
 
-[![Spec: BMAD](https://img.shields.io/badge/Spec-BMAD-blue)](docs/prd.md)
-[![Design: Hexagonal](https://img.shields.io/badge/Design-Hexagonal-green)](docs/architecture.md)
-[![Agent: Embabel](https://img.shields.io/badge/Agent-Embabel-orange)](https://github.com/embabel-agent/embabel)
+---
 
-## 🚀 Key Features
-- **Hybrid Discovery**: Unified analysis of local `.java` source and external binary `.jar` dependencies.
-- **OSGi Deep-Dive**: Native support for `MANIFEST.MF` package wiring and `OSGI-INF` Declarative Services.
-- **O(1) Metadata Caching**: Scalable skip-scanning for 1,000+ bundles using intelligent JSON caching.
-- **Agentic reasoning**: Local LLM integration (Ollama) for natural language impact analysis.
+## 2. Key Capabilities
 
-## 🏁 Quick Start
-See the [Getting Started Guide](docs/getting-started.md) for detailed setup.
+### 🔍 Topological Mapping
+Maps the connectivity of the entire AEM stack:
+*   **HTL Templates** ➡️ **Sling Models** ➡️ **OSGi Services** ➡️ **OSGi Bundles** ➡️ **ClientLibs**.
 
-### 1. Build
+### ⚖️ Architectural Guardrails (Governance)
+Enforce design rules via `dede-rules.json`.
+*   **Example**: Ban legacy `com.day.cq` APIs.
+*   **Example**: Prevent circular dependencies between Core and UI bundles.
+
+### 🤖 AI-Driven Refactoring
+The agentic layer analyzes graph topology to identify "Architectural Smells":
+*   **God Bundles**: High coupling detection.
+*   **Dead Code**: Dangling OSGi services.
+*   **Modernization**: Automation of AEM Cloud readiness steps.
+
+### 🛡️ Security Reachability Analysis
+Go beyond simple CVE lists. Dede-Java traces vulnerabilities from a library to the public UI (HTL), allowing you to prioritize risks by their **Blast Radius**.
+
+---
+
+## 3. Getting Started
+
+### 🚀 Local Execution (CLI)
+Build the project:
 ```bash
-mvn clean package
+mvn clean package -DskipTests
+```
+Run a scan:
+```bash
+java -jar target/dede-java-0.0.1-SNAPSHOT-exec.jar <path-to-aem-project> --security --rules my-rules.json
 ```
 
-### 2. Scan a Modular Project
+### 🐳 Docker Deployment
 ```bash
-java -jar target/dede-java-0.0.1-SNAPSHOT.jar /path/to/your/product
+docker build -t dede-java .
+docker run -v $(pwd):/app/scan dede-java /app/scan --security
 ```
 
-### 3. Impact Analysis (Agent Mode)
-*Note: Requires Ollama running locally.*
-```bash
-java -jar target/dede-java-0.0.1-SNAPSHOT.jar . --ask "Trace the impact of renaming the BillingService interface"
-```
+### 🧩 AEM / OSGi Deployment
+1.  Deploy `target/dede-java-0.0.1-SNAPSHOT.jar` to AEM via the Web Console.
+2.  Use the `DedeOsgiScanner` service from the AEM Groovy Console or MCP to perform live runtime analysis.
 
-## 🏗️ Architecture
-This project follows **Modern System Design** principles:
-- **Clean Architecture**: Domain-driven core with Hexagonal ports.
-- **Scalability**: Designed to handle products with >1000 OSGi bundles.
-- **Documentation**: Managed via [Architectural Decision Records (ADRs)](docs/adr/).
+---
 
-## 📄 License
-Apache 2.0
+## 4. Architectural Documentation
+For a deep dive into the engine's design, see:
+*   [Architecture Guide](docs/architecture.md)
+*   [Security Reachability Analysis](docs/SECURITY_AUDIT.md)
+*   [AEM Analyser Complement](docs/AEM_ANALYSER_COMPLIMENT.md)

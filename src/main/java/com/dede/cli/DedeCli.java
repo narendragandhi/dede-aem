@@ -35,8 +35,8 @@ public class DedeCli implements CommandLineRunner {
 
     @Override
     public void run(String... args) throws Exception {
-        if (args.length == 0) {
-            System.out.println("Usage: java -jar dede.jar <path-to-scan> [--rules rules.json] [--security]");
+        if (args.length == 0 || "--help".equals(args[0]) || "-h".equals(args[0])) {
+            printHelp();
             return;
         }
 
@@ -52,46 +52,54 @@ public class DedeCli implements CommandLineRunner {
             }
         }
 
+        System.out.println("🚀 Dede-Java Architectural Intelligence Engine v0.0.1");
+        System.out.println("--------------------------------------------------");
+        
         projectScanner.scan(path);
         osgiLinker.link();
         cache.save();
         
-        System.out.println("Scan complete.");
-        System.out.println("Nodes: " + graphService.getNodeCount());
-        System.out.println("Edges: " + graphService.getEdgeCount());
+        System.out.println("\n📊 Scan Summary:");
+        System.out.println("   - Total Nodes: " + graphService.getNodeCount());
+        System.out.println("   - Total Edges: " + graphService.getEdgeCount());
 
         if (rulesPath != null) {
-            System.out.println("\n--- Applying Architectural Guardrails ---");
+            System.out.println("\n⚖️  Architectural Guardrails:");
             List<String> violations = governanceEngine.validate(rulesPath);
             if (violations.isEmpty()) {
-                System.out.println("✅ All architectural guardrails passed.");
+                System.out.println("   ✅ All guardrails passed.");
             } else {
-                System.err.println("❌ Architectural Guardrail Violations found:");
-                violations.forEach(System.err::println);
+                violations.forEach(v -> System.err.println("   ❌ " + v));
             }
         }
 
         if (runSecurity) {
-            System.out.println("\n--- 🛡️ Security Audit & Reachability Analysis ---");
+            System.out.println("\n🛡️  Security Reachability Analysis:");
             List<String> findings = vulnerabilityService.runSecurityAudit();
             if (findings.isEmpty()) {
-                System.out.println("✅ No known vulnerabilities detected in scanned artifacts.");
+                System.out.println("   ✅ No reachable vulnerabilities detected.");
             } else {
-                findings.forEach(System.out::println);
+                findings.forEach(f -> System.out.println("   ⚠️ " + f));
             }
         }
 
-        System.out.println("\n--- 🤖 AI Refactoring Suggestions ---");
+        System.out.println("\n🤖 AI Refactoring Suggestions:");
         List<String> suggestions = graphAgentSkills.suggestRefactoring();
         if (suggestions.isEmpty()) {
-            System.out.println("No refactoring suggestions. Architecture looks solid!");
+            System.out.println("   Architecture looks solid!");
         } else {
-            suggestions.forEach(System.out::println);
+            suggestions.forEach(s -> System.out.println("   💡 " + s));
         }
+    }
 
-        System.out.println("\n--- OSGi Bundles Found ---");
-        graphService.getAllNodes().stream()
-                .filter(node -> node.getType() == com.dede.core.model.NodeType.BUNDLE)
-                .forEach(node -> System.out.println("Bundle: " + node.getName()));
+    private void printHelp() {
+        System.out.println("Usage: java -jar dede.jar <path-to-project> [options]");
+        System.out.println("\nOptions:");
+        System.out.println("  <path-to-project>    Root directory of the AEM/Java project to scan.");
+        System.out.println("  --rules <file.json>  Path to a JSON file containing architectural guardrail rules.");
+        System.out.println("  --security           Perform security reachability analysis for known CVEs.");
+        System.out.println("  --help, -h           Show this help message.");
+        System.out.println("\nExample:");
+        System.out.println("  java -jar dede.jar ./my-aem-project --rules my-rules.json --security");
     }
 }

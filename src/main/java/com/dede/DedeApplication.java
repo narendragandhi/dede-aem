@@ -1,17 +1,18 @@
 package com.dede;
 
-import com.dede.analysis.DedeScanner;
+import com.dede.analysis.ProjectScanner;
 import com.dede.analysis.SourceParser;
 import com.dede.core.GraphService;
 import com.dede.governance.GovernanceEngine;
 import com.dede.security.VulnerabilityService;
+import com.dede.agent.GraphAgentSkills;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.annotation.Bean;
 
 import java.io.File;
-import java.util.Arrays;
+import java.util.List;
 
 @SpringBootApplication
 public class DedeApplication {
@@ -21,9 +22,9 @@ public class DedeApplication {
     }
 
     @Bean
-    public CommandLineRunner commandLineRunner(DedeScanner scanner, SourceParser sourceParser, 
+    public CommandLineRunner commandLineRunner(ProjectScanner scanner, SourceParser sourceParser, 
                                              GraphService graphService, GovernanceEngine governance,
-                                             VulnerabilityService security) {
+                                             VulnerabilityService security, GraphAgentSkills agent) {
         return args -> {
             if (args.length == 0) {
                 printHelp();
@@ -32,12 +33,16 @@ public class DedeApplication {
 
             String projectPath = args[0];
             String rulesPath = null;
+            String dotOutputPath = null;
             boolean checkSecurity = false;
             String profiles = "aem"; // Default
 
             for (int i = 0; i < args.length; i++) {
                 if ("--rules".equals(args[i]) && i + 1 < args.length) {
                     rulesPath = args[i + 1];
+                }
+                if ("--dot".equals(args[i]) && i + 1 < args.length) {
+                    dotOutputPath = args[i + 1];
                 }
                 if ("--security".equals(args[i])) {
                     checkSecurity = true;
@@ -62,9 +67,14 @@ public class DedeApplication {
                 security.audit(graphService.getGraph());
             }
 
+            if (dotOutputPath != null) {
+                System.out.println("📝 Exporting graph to DOT: " + dotOutputPath);
+                graphService.exportToDot(new File(dotOutputPath));
+            }
+
             System.out.println("\n📊 Scan Summary:");
-            System.out.println("   - Total Nodes: " + graphService.getGraph().vertexSet().size());
-            System.out.println("   - Total Edges: " + graphService.getGraph().edgeSet().size());
+            System.out.println("   - Total Nodes: " + graphService.getNodeCount());
+            System.out.println("   - Total Edges: " + graphService.getEdgeCount());
 
             if (rulesPath != null) {
                 governance.printViolations();
@@ -76,17 +86,13 @@ public class DedeApplication {
 
             // AI Insights
             System.out.println("\n🤖 AI Refactoring Suggestions:");
-            suggestAI(graphService);
+            List<String> suggestions = agent.suggestRefactoring();
+            if (suggestions.isEmpty()) {
+                System.out.println("   Architecture looks solid!");
+            } else {
+                suggestions.forEach(s -> System.out.println("   💡 " + s));
+            }
         };
-    }
-
-    private void suggestAI(GraphService graphService) {
-        long edges = graphService.getGraph().edgeSet().size();
-        if (edges > 100) {
-            System.out.println("   💡 REFACTOR [God Bundle]: Found high coupling. Suggestion: Split into 'api' and 'core' bundles.");
-        } else {
-            System.out.println("   Architecture looks solid!");
-        }
     }
 
     private void printHelp() {
@@ -95,5 +101,6 @@ public class DedeApplication {
         System.out.println("  --profiles <p1,p2>  Comma-separated profiles (default: aem)");
         System.out.println("  --rules <path>      Path to dede-rules.json");
         System.out.println("  --security          Enable security reachability audit");
+        System.out.println("  --dot <path.dot>    Export visual graph to DOT format");
     }
 }

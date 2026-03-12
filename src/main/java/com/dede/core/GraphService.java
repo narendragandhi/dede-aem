@@ -9,10 +9,15 @@ import org.jgrapht.graph.DirectedMultigraph;
 import org.jgrapht.nio.json.JSONExporter;
 import org.springframework.stereotype.Service;
 
+import java.io.IOException;
 import java.io.StringWriter;
 import java.io.Writer;
+import java.io.FileWriter;
+import java.io.File;
 import java.util.Optional;
 import java.util.Set;
+import java.util.Map;
+import java.util.LinkedHashMap;
 import java.util.stream.Collectors;
 
 @Service
@@ -50,6 +55,31 @@ public class GraphService {
         return edge;
     }
 
+    public void exportToDot(File file) throws IOException {
+        // Sanitize IDs for DOT (no colons, slashes, or dots)
+        org.jgrapht.nio.dot.DOTExporter<CodeNode, Relationship> exporter = new org.jgrapht.nio.dot.DOTExporter<>(
+            node -> node.getId().replaceAll("[^a-zA-Z0-9_]", "_")
+        );
+        
+        exporter.setVertexAttributeProvider(node -> {
+            Map<String, org.jgrapht.nio.Attribute> attrs = new LinkedHashMap<>();
+            attrs.put("label", org.jgrapht.nio.DefaultAttribute.createAttribute(node.getName()));
+            attrs.put("shape", org.jgrapht.nio.DefaultAttribute.createAttribute(node.getType() == NodeType.OSGI_COMPONENT ? "box" : "ellipse"));
+            attrs.put("color", org.jgrapht.nio.DefaultAttribute.createAttribute(node.getType().name().startsWith("SLING") ? "blue" : "black"));
+            return attrs;
+        });
+        
+        exporter.setEdgeAttributeProvider(edge -> {
+            Map<String, org.jgrapht.nio.Attribute> attrs = new LinkedHashMap<>();
+            attrs.put("label", org.jgrapht.nio.DefaultAttribute.createAttribute(edge.getType().name()));
+            return attrs;
+        });
+        
+        try (FileWriter writer = new FileWriter(file)) {
+            exporter.exportGraph(graph, writer);
+        }
+    }
+
     public Set<CodeNode> getOutgoingNodes(CodeNode source) {
         return graph.outgoingEdgesOf(source).stream()
                 .map(graph::getEdgeTarget)
@@ -65,7 +95,7 @@ public class GraphService {
     public Set<CodeNode> getTransitiveIncomingNodes(CodeNode target) {
         Set<CodeNode> result = new java.util.HashSet<>();
         collectTransitiveInbound(target, result);
-        result.remove(target); // Don't include self
+        result.remove(target);
         return result;
     }
 
@@ -111,13 +141,10 @@ public class GraphService {
     public Set<Set<CodeNode>> findCycles() {
         org.jgrapht.alg.cycle.CycleDetector<CodeNode, Relationship> cycleDetector = new org.jgrapht.alg.cycle.CycleDetector<>(graph);
         Set<CodeNode> cycleNodes = cycleDetector.findCycles();
-        // Simplified grouping - in reality, we'd find actual cycle paths
         return cycleNodes.isEmpty() ? java.util.Collections.emptySet() : java.util.Collections.singleton(cycleNodes);
     }
 
     public String exportHierarchicalJson() {
-        // Cytoscape 'parent' support
-        // We ensure every node has a 'parent' property if applicable
         graph.vertexSet().forEach(node -> {
             if (node.getType() == NodeType.PACKAGE) {
                 findParentBundle(node).ifPresent(b -> node.getProperties().put("parent", b.getId()));
@@ -155,5 +182,9 @@ public class GraphService {
     
     public int getEdgeCount() {
         return graph.edgeSet().size();
+    }
+
+    public Graph<CodeNode, Relationship> getGraph() {
+        return graph;
     }
 }

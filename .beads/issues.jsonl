@@ -1,0 +1,14 @@
+{"id": "bd-001", "title": "Project Initialization", "type": "epic", "status": "closed", "priority": "high"}
+{"id": "bd-002", "title": "Setup Maven Project", "type": "task", "status": "closed", "priority": "high", "parent": "bd-001"}
+{"id": "bd-003", "title": "Create Application Entry Point", "type": "task", "status": "closed", "priority": "high", "parent": "bd-001"}
+{"id": "bd-004", "title": "Core Domain Model", "type": "epic", "status": "closed", "priority": "medium"}
+{"id": "bd-005", "title": "Define Node and Edge Entities", "type": "task", "status": "closed", "priority": "medium", "parent": "bd-004"}
+{"id": "bd-006", "title": "Implement Graph Service", "type": "task", "status": "closed", "priority": "high", "parent": "bd-004"}
+{"id": "bd-007", "title": "Implement Source Parser", "type": "task", "status": "closed", "priority": "high", "parent": "bd-004"}
+{"id": "bd-008", "title": "Implement Project Scanner", "type": "task", "status": "closed", "priority": "high", "parent": "bd-004"}
+{"id": "bd-009", "title": "Implement CLI Runner", "type": "task", "status": "closed", "priority": "high", "parent": "bd-001"}
+{"id": "bd-010", "title": "Implement Source Parser Test", "type": "task", "status": "closed", "priority": "high", "parent": "bd-004"}
+{"id": "bd-011", "title": "Implement Agent Skills (Tools)", "type": "task", "status": "closed", "priority": "high", "parent": "bd-001"}
+{"id": "bd-012", "title": "Implement AI Service", "type": "task", "status": "closed", "priority": "high", "parent": "bd-001"}
+{"id": "bd-013", "title": "Update CLI to support Agent interaction", "type": "task", "status": "closed", "priority": "high", "parent": "bd-001"}
+{"id": "bd-014", "title": "Documentation", "type": "task", "status": "closed", "priority": "medium", "parent": "bd-001"}

@@ -1,0 +1,4 @@
+{"id": "bd-015", "title": "OSGi Support Epic", "type": "epic", "status": "in_progress", "priority": "high"}
+{"id": "bd-016", "title": "Implement OSGi Manifest Parser", "type": "task", "status": "in_progress", "priority": "high", "parent": "bd-015"}
+{"id": "bd-017", "title": "Implement OSGi Service Resolver", "type": "task", "status": "open", "priority": "high", "parent": "bd-015"}
+{"id": "bd-018", "title": "Cross-Bundle Relationship Builder", "type": "task", "status": "open", "priority": "high", "parent": "bd-015"}

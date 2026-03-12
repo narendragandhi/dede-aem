@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>dede-java: Impact Graph</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape/3.26.0/cytoscape.min.js"></script>
+    <style>
+        #cy { width: 100%; height: 900px; display: block; border: 1px solid #ccc; }
+        body { font-family: sans-serif; }
+    </style>
+</head>
+<body>
+    <h1>dede-java: Architectural Discovery</h1>
+    <div id="cy"></div>
+    <script>
+        fetch('/api/graph')
+            .then(res => res.json())
+            .then(data => {
+                const elements = [];
+                // Transform JGraphT JSON to Cytoscape format
+                data.nodes.forEach(n => elements.push({ data: { id: n.id, label: n.id } }));
+                data.edges.forEach(e => elements.push({ data: { source: e.source, target: e.target, label: e.type } }));
+
+                const cy = cytoscape({
+                    container: document.getElementById('cy'),
+                    elements: elements,
+                    style: [
+                        { selector: 'node', style: { 'label': 'data(label)', 'font-size': '10px' } },
+                        { selector: 'edge', style: { 'width': 2, 'line-color': '#999', 'target-arrow-color': '#999', 'target-arrow-shape': 'triangle', 'curve-style': 'bezier', 'label': 'data(label)', 'font-size': '8px' } }
+                    ],
+                    layout: { name: 'cose' }
+                });
+            });
+    </script>
+</body>
+</html>

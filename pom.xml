@@ -11,23 +11,42 @@
     <groupId>com.dede</groupId>
     <artifactId>dede-java</artifactId>
     <version>0.0.1-SNAPSHOT</version>
+    <packaging>bundle</packaging>
     <name>dede-java</name>
-    <description>Dependency Explorer for Java</description>
+    <description>Dependency Explorer for Java (Standalone &amp; OSGi Bundle)</description>
+    
     <properties>
         <java.version>21</java.version>
         <javaparser.version>3.25.7</javaparser.version>
         <jgrapht.version>1.5.2</jgrapht.version>
-        <langchain4j.version>0.24.0</langchain4j.version>
+        <osgi.version>7.0.0</osgi.version>
     </properties>
+
     <dependencies>
-        <!-- Spring Boot -->
+        <!-- Spring Boot (Optional for OSGi) -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-web</artifactId>
         </dependency>
+        
+        <!-- OSGi Dependencies -->
         <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter</artifactId>
+            <groupId>org.osgi</groupId>
+            <artifactId>org.osgi.service.component.annotations</artifactId>
+            <version>1.4.0</version>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.osgi</groupId>
+            <artifactId>osgi.core</artifactId>
+            <version>7.0.0</version>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-api</artifactId>
+            <version>1.7.36</version>
+            <scope>provided</scope>
         </dependency>
 
         <!-- JavaParser -->
@@ -43,22 +62,16 @@
             <artifactId>jgrapht-core</artifactId>
             <version>${jgrapht.version}</version>
         </dependency>
-        
-        <!-- JGraphT IO for export -->
         <dependency>
             <groupId>org.jgrapht</groupId>
             <artifactId>jgrapht-io</artifactId>
             <version>${jgrapht.version}</version>
         </dependency>
 
-        <!-- Jackson for caching -->
+        <!-- Jackson -->
         <dependency>
             <groupId>com.fasterxml.jackson.core</groupId>
             <artifactId>jackson-databind</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>com.fasterxml.jackson.datatype</groupId>
-            <artifactId>jackson-datatype-jsr310</artifactId>
         </dependency>
 
         <!-- Testing -->
@@ -67,12 +80,7 @@
             <artifactId>spring-boot-starter-test</artifactId>
             <scope>test</scope>
         </dependency>
-        <dependency>
-            <groupId>org.assertj</groupId>
-            <artifactId>assertj-core</artifactId>
-            <scope>test</scope>
-        </dependency>
-        
+
         <dependency>
             <groupId>org.projectlombok</groupId>
             <artifactId>lombok</artifactId>
@@ -82,44 +90,57 @@
 
     <build>
         <plugins>
+            <!-- Maven Bundle Plugin for OSGi -->
+            <plugin>
+                <groupId>org.apache.felix</groupId>
+                <artifactId>maven-bundle-plugin</artifactId>
+                <version>5.1.4</version>
+                <extensions>true</extensions>
+                <configuration>
+                    <instructions>
+                        <Bundle-SymbolicName>${project.groupId}.${project.artifactId}</Bundle-SymbolicName>
+                        <Bundle-Name>Dede-Java Architectural Intelligence</Bundle-Name>
+                        <Export-Package>
+                            com.dede.core.model,
+                            com.dede.core,
+                            com.dede.analysis,
+                            com.dede.osgi
+                        </Export-Package>
+                        <Import-Package>
+                            !org.springframework.*,
+                            !com.fasterxml.jackson.datatype.jsr310,
+                            *
+                        </Import-Package>
+                        <Embed-Dependency>
+                            javaparser-core,
+                            javaparser-symbol-solver-core,
+                            jgrapht-core,
+                            jgrapht-io,
+                            jackson-databind,
+                            jackson-annotations,
+                            jackson-core
+                        </Embed-Dependency>
+                        <Embed-Transitive>true</Embed-Transitive>
+                        <_dsannotations>*</_dsannotations>
+                        <_metatypeannotations>*</_metatypeannotations>
+                    </instructions>
+                </configuration>
+            </plugin>
+
+            <!-- Spring Boot Repackage -->
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
-                <configuration>
-                    <excludes>
-                        <exclude>
-                            <groupId>org.projectlombok</groupId>
-                            <artifactId>lombok</artifactId>
-                        </exclude>
-                    </excludes>
-                </configuration>
+                <executions>
+                    <execution>
+                        <id>repackage</id>
+                        <goals><goal>repackage</goal></goals>
+                        <configuration>
+                            <classifier>exec</classifier>
+                        </configuration>
+                    </execution>
+                </executions>
             </plugin>
         </plugins>
     </build>
-
-    <repositories>
-        <repository>
-            <id>embabel-releases</id>
-            <url>https://repo.embabel.com/artifactory/libs-release</url>
-            <releases><enabled>true</enabled></releases>
-            <snapshots><enabled>false</enabled></snapshots>
-        </repository>
-        <repository>
-            <id>spring-milestones</id>
-            <name>Spring Milestones</name>
-            <url>https://repo.spring.io/milestone</url>
-            <snapshots>
-                <enabled>false</enabled>
-            </snapshots>
-        </repository>
-        <repository>
-            <id>spring-snapshots</id>
-            <name>Spring Snapshots</name>
-            <url>https://repo.spring.io/snapshot</url>
-            <releases>
-                <enabled>false</enabled>
-            </releases>
-        </repository>
-    </repositories>
-
 </project>

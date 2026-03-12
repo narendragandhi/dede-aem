@@ -80,6 +80,17 @@ public class GraphAgentSkills {
                 }
             });
 
+        // 6. Detect Zombie Resource Types (Code exists but not in Content)
+        graphService.getAllNodes().stream()
+            .filter(n -> n.getType() == NodeType.JCR_RESOURCE_TYPE)
+            .forEach(res -> {
+                boolean hasContent = !graphService.getInboundRelatedNodes(res, RelationshipType.INSTANTIATED_BY).isEmpty();
+                boolean hasHtl = !graphService.getInboundRelatedNodes(res, RelationshipType.REFERENCES).isEmpty();
+                if (!hasContent && !hasHtl) {
+                    suggestions.add("REFACTOR [Zombie Code]: ResourceType '" + res.getName() + "' has associated Java logic but is never instantiated in JCR content. Suggestion: Verify if this component is deprecated and can be removed.");
+                }
+            });
+
         return suggestions;
     }
 

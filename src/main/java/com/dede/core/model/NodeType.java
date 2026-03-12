@@ -19,5 +19,7 @@ public enum NodeType {
     SLING_CACONFIG,
     OSGI_CONFIG_FACTORY,
     WORKFLOW_PROCESS,
-    SLING_JOB
+    SLING_JOB,
+    JCR_PAGE,
+    JCR_COMPONENT
 }

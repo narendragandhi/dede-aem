@@ -19,5 +19,7 @@ public enum RelationshipType {
     DEPENDS_ON,   // ClientLib -> ClientLib
     EMBEDS,       // ClientLib -> ClientLib
     EXPOSES,      // Vulnerability -> Bundle/ClientLib
-    CONFIGURES    // JCR Node -> OSGi/CAConfig
+    CONFIGURES,   // JCR Node -> OSGi/CAConfig
+    INSTANTIATED_BY, // JCR Node -> JCR Resource Type
+    DEFINES       // ui.apps folder -> JCR Resource Type
 }

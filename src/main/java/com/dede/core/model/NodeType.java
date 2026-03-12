@@ -21,5 +21,7 @@ public enum NodeType {
     WORKFLOW_PROCESS,
     SLING_JOB,
     JCR_PAGE,
-    JCR_COMPONENT
+    JCR_COMPONENT,
+    DISPATCHER_FILTER,
+    CDN_RULE
 }

@@ -114,8 +114,31 @@ public class SourceParser {
             });
         }
 
-        // Methods & Fields...
+        // Visit methods & fields...
         type.getMethods().forEach(method -> visitMethod(method, classNode, filePath));
+
+        // Detect manual adaptTo() and getService() calls
+        type.findAll(com.github.javaparser.ast.expr.MethodCallExpr.class).forEach(call -> {
+            String methodName = call.getNameAsString();
+            if (methodName.equals("adaptTo") || methodName.equals("getService")) {
+                call.getArguments().stream()
+                    .filter(arg -> arg.toString().contains(".class"))
+                    .findFirst()
+                    .ifPresent(arg -> {
+                        String target = arg.toString().replace(".class", "");
+                        RelationshipType relType = methodName.equals("adaptTo") 
+                            ? RelationshipType.DYNAMIC_ADAPTS_TO 
+                            : RelationshipType.DYNAMIC_CONSUMES;
+
+                        CodeNode targetNode = new CodeNode("svc:" + target, target, 
+                            methodName.equals("adaptTo") ? NodeType.SLING_MODEL : NodeType.OSGI_SERVICE, 
+                            target, null);
+                        graphService.addNode(targetNode);
+                        graphService.addEdge(classNode, targetNode, relType);
+                    });
+            }
+        });
+
         type.getFields().forEach(field -> {
             field.getVariables().forEach(v -> {
                 String fieldType = v.getTypeAsString();

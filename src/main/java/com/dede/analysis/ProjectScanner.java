@@ -17,14 +17,17 @@ public class ProjectScanner {
     private final OsgiManifestParser manifestParser;
     private final SlingHtlParser htlParser;
     private final JcrContentParser jcrParser;
+    private final DispatcherParser dispatcherParser;
     private final GraphService graphService;
 
     public ProjectScanner(SourceParser sourceParser, OsgiManifestParser manifestParser, 
-                          SlingHtlParser htlParser, JcrContentParser jcrParser, GraphService graphService) {
+                          SlingHtlParser htlParser, JcrContentParser jcrParser, 
+                          DispatcherParser dispatcherParser, GraphService graphService) {
         this.sourceParser = sourceParser;
         this.manifestParser = manifestParser;
         this.htlParser = htlParser;
         this.jcrParser = jcrParser;
+        this.dispatcherParser = dispatcherParser;
         this.graphService = graphService;
     }
 
@@ -44,6 +47,8 @@ public class ProjectScanner {
                     htlParser.parse(file);
                 } else if (fileName.equals(".content.xml")) {
                     jcrParser.parse(file);
+                } else if (fileName.endsWith(".any") || fileName.contains("filter")) {
+                    dispatcherParser.parse(file);
                 }
                 
                 return FileVisitResult.CONTINUE;
@@ -51,7 +56,6 @@ public class ProjectScanner {
 
             @Override
             public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs) throws IOException {
-                // Detect AEM Component folders (ui.apps)
                 if (Files.exists(dir.resolve(".content.xml"))) {
                     detectAemComponent(dir);
                 }
@@ -61,7 +65,6 @@ public class ProjectScanner {
     }
 
     private void detectAemComponent(Path dir) {
-        // Simple heuristic: if inside /apps/ and has .content.xml
         String path = dir.toString();
         if (path.contains("/apps/")) {
             String resType = path.substring(path.indexOf("/apps/") + 6);

@@ -21,5 +21,7 @@ public enum RelationshipType {
     EXPOSES,      // Vulnerability -> Bundle/ClientLib
     CONFIGURES,   // JCR Node -> OSGi/CAConfig
     INSTANTIATED_BY, // JCR Node -> JCR Resource Type
-    DEFINES       // ui.apps folder -> JCR Resource Type
+    DEFINES,       // ui.apps folder -> JCR Resource Type
+    DYNAMIC_CONSUMES, // Code -> OSGi Service (via BundleContext)
+    DYNAMIC_ADAPTS_TO // Code -> Model (via adaptTo)
 }

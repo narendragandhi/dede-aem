@@ -69,9 +69,46 @@ public class SourceParser {
                 CodeNode svcNode = new CodeNode("svc:" + svc, svc, NodeType.OSGI_SERVICE, svc, null);
                 graphService.addNode(svcNode);
                 graphService.addEdge(classNode, svcNode, RelationshipType.PROVIDES);
+
+                // Detect AEM Workflow Process
+                if (svc.contains("WorkflowProcess")) {
+                    getAttribute(a, "property").ifPresent(prop -> {
+                        if (prop.contains("process.label")) {
+                            String label = prop.split("=")[1].replace("\"", "");
+                            CodeNode wfNode = new CodeNode("wf:" + label, label, NodeType.WORKFLOW_PROCESS, label, filePath);
+                            graphService.addNode(wfNode);
+                            graphService.addEdge(classNode, wfNode, RelationshipType.PROVIDES);
+                        }
+                    });
+                }
+
+                // Detect Sling Job Consumer
+                if (svc.contains("JobConsumer") || svc.contains("JobExecutor")) {
+                    getAttribute(a, "property").ifPresent(prop -> {
+                        if (prop.contains("job.topics")) {
+                            String topic = prop.split("=")[1].replace("\"", "");
+                            CodeNode jobNode = new CodeNode("job:" + topic, topic, NodeType.SLING_JOB, topic, filePath);
+                            graphService.addNode(jobNode);
+                            graphService.addEdge(classNode, jobNode, RelationshipType.PROVIDES);
+                        }
+                    });
+                }
             });
             // Factory detection
             getAttribute(a, "factory").ifPresent(f -> classNode.setType(NodeType.OSGI_CONFIG_FACTORY));
+        });
+
+        // Detect Sling Servlets
+        type.getAnnotationByName("SlingServletResourceTypes").ifPresent(a -> {
+            classNode.setType(NodeType.OSGI_COMPONENT);
+            getAttribute(a, "resourceTypes").ifPresent(resType -> {
+                for (String rt : resType.split(",")) {
+                    rt = rt.trim().replace("\"", "");
+                    CodeNode resNode = new CodeNode("res:" + rt, rt, NodeType.JCR_RESOURCE_TYPE, rt, null);
+                    graphService.addNode(resNode);
+                    graphService.addEdge(resNode, classNode, RelationshipType.REFERENCES);
+                }
+            });
         });
 
         type.getAnnotationByName("Designate").ifPresent(a -> {
@@ -141,6 +178,14 @@ public class SourceParser {
         String methodName = method.getNameAsString();
         String fullSignature = parentClass.getSignature() + "." + methodName + "()";
         CodeNode methodNode = new CodeNode("method:" + fullSignature, methodName, NodeType.METHOD, fullSignature, filePath);
+
+        // Mark OSGi Lifecycle methods
+        if (method.getAnnotationByName("Activate").isPresent() || 
+            method.getAnnotationByName("Deactivate").isPresent() || 
+            method.getAnnotationByName("Modified").isPresent()) {
+            methodNode.setName("[LIFECYCLE] " + methodName);
+        }
+
         graphService.addNode(methodNode);
         graphService.addEdge(parentClass, methodNode, RelationshipType.DECLARES);
 

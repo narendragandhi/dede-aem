@@ -17,7 +17,7 @@ import java.nio.file.Path;
 import java.util.*;
 
 @Component
-public class SourceParser {
+public class SourceParser implements ProjectParser {
 
     private final GraphService graphService;
     private final JavaParser javaParser;
@@ -28,6 +28,11 @@ public class SourceParser {
         this.graphService = graphService;
         this.javaParser = new JavaParser();
         this.objectMapper = new ObjectMapper();
+    }
+
+    @Override
+    public boolean supports(Path path) {
+        return path.toString().endsWith(".java");
     }
 
     /**
@@ -55,6 +60,7 @@ public class SourceParser {
         }
     }
 
+    @Override
     public void parse(Path filePath) {
         try {
             ParseResult<CompilationUnit> result = javaParser.parse(filePath);

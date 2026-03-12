@@ -1,6 +1,6 @@
 package com.dede.analysis;
 
-import com.dede.core.GraphService;
+import com.dede.core.*;
 import com.dede.core.model.CodeNode;
 import com.dede.core.model.NodeType;
 import org.junit.jupiter.api.Test;
@@ -14,10 +14,17 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 class SourceParserTest {
 
+    private GraphService createService() {
+        GraphRepository repo = new GraphRepository();
+        GraphAnalyzer analyzer = new GraphAnalyzer(repo);
+        GraphExporter exporter = new GraphExporter(repo);
+        return new GraphService(repo, analyzer, exporter);
+    }
+
     @Test
     void shouldParseSimpleClass(@TempDir Path tempDir) throws IOException {
         // Arrange
-        GraphService graphService = new GraphService();
+        GraphService graphService = createService();
         SourceParser parser = new SourceParser(graphService);
 
         Path sourceFile = tempDir.resolve("TestClass.java");

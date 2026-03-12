@@ -11,10 +11,17 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 class GraphServiceTest {
 
+    private GraphService createService() {
+        GraphRepository repo = new GraphRepository();
+        GraphAnalyzer analyzer = new GraphAnalyzer(repo);
+        GraphExporter exporter = new GraphExporter(repo);
+        return new GraphService(repo, analyzer, exporter);
+    }
+
     @Test
     void shouldAllowMultipleEdgesBetweenSameNodes() {
         // Arrange
-        GraphService graphService = new GraphService();
+        GraphService graphService = createService();
         CodeNode methodA = new CodeNode("method:A", "A", NodeType.METHOD, "A", null);
         CodeNode methodB = new CodeNode("method:B", "B", NodeType.METHOD, "B", null);
 
@@ -33,7 +40,7 @@ class GraphServiceTest {
     @Test
     void shouldCorrectyIdentifyIncomingNodes() {
         // Arrange
-        GraphService graphService = new GraphService();
+        GraphService graphService = createService();
         CodeNode caller = new CodeNode("method:caller", "caller", NodeType.METHOD, "caller", null);
         CodeNode callee = new CodeNode("method:callee", "callee", NodeType.METHOD, "callee", null);
 

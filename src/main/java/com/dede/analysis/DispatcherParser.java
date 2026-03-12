@@ -6,35 +6,34 @@ import com.dede.core.model.NodeType;
 import com.dede.core.model.RelationshipType;
 import org.springframework.stereotype.Component;
 
-import java.io.File;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 @Component
-public class DispatcherParser {
+public class DispatcherParser implements ProjectParser {
 
     private final GraphService graphService;
-    private final Pattern filterPattern = Pattern.compile("/url \"([^\"]+)\"");
-    private final Pattern allowPattern = Pattern.compile("/type \"allow\"");
+    private static final Pattern URL_PATTERN = Pattern.compile("/url\\s+\"([^\"]+)\"");
 
     public DispatcherParser(GraphService graphService) {
         this.graphService = graphService;
     }
 
+    @Override
+    public boolean supports(Path path) {
+        return path.toString().endsWith(".any");
+    }
+
+    @Override
     public void parse(Path filterPath) {
         try {
             String content = Files.readString(filterPath);
-            String fileName = filterPath.getFileName().toString();
-
-            // Identify dispatcher filters (.any files)
-            if (!fileName.endsWith(".any") && !fileName.contains("filter")) return;
-
-            Matcher m = filterPattern.matcher(content);
+            Matcher m = URL_PATTERN.matcher(content);
             while (m.find()) {
                 String urlPattern = m.group(1);
-                CodeNode filterNode = new CodeNode("filter:" + urlPattern, urlPattern, NodeType.DISPATCHER_FILTER, urlPattern, filterPath.toString());
+                CodeNode filterNode = new CodeNode("dispatcher:" + urlPattern, urlPattern, NodeType.DISPATCHER_FILTER, urlPattern, filterPath.toString());
                 graphService.addNode(filterNode);
 
                 // Attempt to link to Sling Resource Types if the filter is specific

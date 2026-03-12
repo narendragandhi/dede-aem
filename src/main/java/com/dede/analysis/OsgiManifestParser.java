@@ -15,7 +15,7 @@ import java.util.jar.Attributes;
 import java.util.jar.Manifest;
 
 @Component
-public class OsgiManifestParser {
+public class OsgiManifestParser implements ProjectParser {
 
     private final GraphService graphService;
 
@@ -23,6 +23,12 @@ public class OsgiManifestParser {
         this.graphService = graphService;
     }
 
+    @Override
+    public boolean supports(Path path) {
+        return path.toString().endsWith("MANIFEST.MF");
+    }
+
+    @Override
     public void parse(Path manifestPath) {
         try (InputStream is = Files.newInputStream(manifestPath)) {
             parseFromManifestObject(new Manifest(is), manifestPath.toString());

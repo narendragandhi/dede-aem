@@ -7,12 +7,17 @@ If you are an AI assistant helping a developer in this repository, use this guid
 ### 🌟 What is Dede-Java?
 Dede-Java is an **Architectural Context Engine**. It builds a "Digital Twin" graph of AEM/OSGi projects, linking Dispatcher rules, JCR content, and Java/OSGi code.
 
+### 📚 Deep Domain Expertise
+For detailed technical justifications, architectural "litmus tests," and why this tool is critical for AEM architects (including `bnd` and SCR metadata handling), see:
+👉 **[EXPERT_BASIS.md](./EXPERT_BASIS.md)**
+
 ### 🛠️ When to use this tool
 As an AI, you should suggest running `dede-java` in these scenarios:
 1. **Refactoring**: Before deleting code, run a "Blast Radius" check.
 2. **Onboarding**: When you first see a project, run a full scan to understand the topology.
 3. **Cloud Migration**: To find legacy `com.day.cq` usage.
 4. **Debugging**: To find circular OSGi service dependencies.
+5. **Security Auditing**: To verify Dispatcher-to-Bundle reachability.
 
 ---
 

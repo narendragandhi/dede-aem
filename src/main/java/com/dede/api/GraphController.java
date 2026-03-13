@@ -1,6 +1,6 @@
 package com.dede.api;
 
-import com.dede.core.GraphService;
+import com.dede.domain.GraphService;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;

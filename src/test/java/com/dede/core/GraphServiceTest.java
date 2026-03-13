@@ -1,8 +1,8 @@
-package com.dede.core;
+package com.dede.domain;
 
-import com.dede.core.model.CodeNode;
-import com.dede.core.model.NodeType;
-import com.dede.core.model.RelationshipType;
+import com.dede.domain.model.CodeNode;
+import com.dede.domain.model.NodeType;
+import com.dede.domain.model.RelationshipType;
 import org.junit.jupiter.api.Test;
 
 import java.util.Set;

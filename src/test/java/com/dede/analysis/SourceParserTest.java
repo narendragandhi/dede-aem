@@ -1,8 +1,8 @@
-package com.dede.analysis;
+package com.dede.discovery;
 
-import com.dede.core.*;
-import com.dede.core.model.CodeNode;
-import com.dede.core.model.NodeType;
+import com.dede.domain.*;
+import com.dede.domain.model.CodeNode;
+import com.dede.domain.model.NodeType;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 

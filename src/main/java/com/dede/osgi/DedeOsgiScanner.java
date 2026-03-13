@@ -1,6 +1,6 @@
 package com.dede.osgi;
 
-import com.dede.analysis.ProjectScanner;
+import com.dede.discovery.ProjectScanner;
 import org.osgi.service.component.annotations.Activate;
 import org.osgi.service.component.annotations.Component;
 import org.osgi.service.component.annotations.Reference;

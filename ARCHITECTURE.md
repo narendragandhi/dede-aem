@@ -45,25 +45,22 @@ The "Configurability Layer" that prevents the tool from being "Too Generic."
 
 ---
 
-## 🏛️ Engineering Standards (v1.0.0)
+## 🧠 AI-Assisted Coding Enabler (v1.1.0)
 
-`dede-java` is built to the highest enterprise standards, serving as a reference implementation for seasoned AEM architects.
+`dede-java` is designed to be the **Context Engine** for AI coding agents. While tools like GitHub Copilot see individual files, `dede-java` sees the **Full-Stack Graph**, providing the AI with the structural intelligence needed to generate project-aware code.
 
-### 1. Domain-Driven Design (DDD)
-The project is organized into **Bounded Contexts** to ensure a clean separation of concerns:
-- **`com.dede.domain`**: The core graph model and relationship logic.
-- **`com.dede.discovery`**: Pluggable strategies for project scanning and parsing.
-- **`com.dede.intelligence`**: High-level graph analysis (Cycles, Centrality, AI).
-- **`com.dede.governance`**: Policy enforcement (BMAD, Gastown, BEADS compliance).
+### 1. Enabling "Pattern-Aware" Generation
+By mapping patterns like **BMAD**, **BEADS**, and **Gastown**, the tool provides a "map" to the AI:
+- **Where to put logic**: The AI knows if a new feature belongs in a `Platform` bundle or a `Business` bundle based on the existing graph topology.
+- **How to wire services**: The AI can see existing `@Reference` patterns to suggest the correct service injection.
+- **Component Integrity**: The AI understands the "Sling Waterfall," ensuring generated Sling Models are correctly mapped to their ResourceTypes and HTL consumers.
 
-### 2. Test-Driven Development (TDD)
-All core architectural rules are implemented via TDD. Our governance engine is verified by comprehensive unit tests that simulate complex AEM dependency scenarios before the logic is integrated.
+### 2. Architectural RAG (Retrieval-Augmented Generation)
+The Graph acts as the ultimate truth for RAG. Before an AI generates code, `dede-java` can export a "Context Snippet" of the surrounding architecture, ensuring the generated code fits the project's unique digital twin perfectly.
 
-### 3. AEM Pattern Compliance (BMAD/BEADS/Gastown)
-The tool is "Pattern Aware." It doesn't just scan code; it understands the intent of modern AEM frameworks:
-- **BMAD Audit**: Enforces strict layering between Platform and Business bundles.
-- **Gastown Check**: Validates Sling Model to ResourceType mappings.
-- **BEADS Verification**: Ensures content-first dependency chains are maintained.
+---
+
+## 🏛️ Engineering Standards (v1.0.0+)
 
 ---
 

@@ -1,11 +1,11 @@
 package com.dede;
 
-import com.dede.analysis.ProjectScanner;
-import com.dede.analysis.SourceParser;
-import com.dede.core.GraphService;
-import com.dede.governance.GovernanceEngine;
-import com.dede.security.VulnerabilityService;
-import com.dede.agent.GraphAgentSkills;
+import com.dede.discovery.ProjectScanner;
+import com.dede.discovery.SourceParser;
+import com.dede.domain.GraphService;
+import com.dede.knowledge.GovernanceEngine;
+import com.dede.intelligence.VulnerabilityService;
+import com.dede.intelligence.GraphAgentSkills;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
@@ -95,7 +95,7 @@ public class DedeApplication {
     }
 
     private void printBanner() {
-        System.out.println("🚀 Dede-Java Architectural Intelligence Engine v0.8.1");
+        System.out.println("🚀 Dede-Java Architectural Intelligence Engine v1.1.0");
         System.out.println("Inspired by Mitko Kolev's 'dede' (https://github.com/mitkox/dede)");
         System.out.println("--------------------------------------------------");
     }

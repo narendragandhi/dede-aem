@@ -1,12 +1,12 @@
-package com.dede.governance;
+package com.dede.knowledge;
 
-import com.dede.core.GraphService;
-import com.dede.core.GraphRepository;
-import com.dede.core.GraphAnalyzer;
-import com.dede.core.GraphExporter;
-import com.dede.core.model.CodeNode;
-import com.dede.core.model.NodeType;
-import com.dede.core.model.RelationshipType;
+import com.dede.domain.GraphService;
+import com.dede.domain.GraphRepository;
+import com.dede.domain.GraphAnalyzer;
+import com.dede.domain.GraphExporter;
+import com.dede.domain.model.CodeNode;
+import com.dede.domain.model.NodeType;
+import com.dede.domain.model.RelationshipType;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;

@@ -1,58 +1,44 @@
-# Dede-Java: The Architectural Intelligence Platform for AEM
+# 🕵️ Dede-Java: High-Performance Architectural Intelligence
 
-## 1. Overview
-Dede-Java is a high-performance architectural scanner and intelligence engine designed for complex AEM and OSGi-based ecosystems. It transforms static source code and artifacts into a **Directed Multigraph**, enabling deep traceability and impact analysis.
-
----
-
-## 2. Key Capabilities
-
-### 🔍 Topological Mapping
-Maps the connectivity of the entire AEM stack:
-*   **HTL Templates** ➡️ **Sling Models** ➡️ **OSGi Services** ➡️ **OSGi Bundles** ➡️ **ClientLibs**.
-
-### ⚖️ Architectural Guardrails (Governance)
-Enforce design rules via `dede-rules.json`.
-*   **Example**: Ban legacy `com.day.cq` APIs.
-*   **Example**: Prevent circular dependencies between Core and UI bundles.
-
-### 🤖 AI-Driven Refactoring
-The agentic layer analyzes graph topology to identify "Architectural Smells":
-*   **God Bundles**: High coupling detection.
-*   **Dead Code**: Dangling OSGi services.
-*   **Modernization**: Automation of AEM Cloud readiness steps.
-
-### 🛡️ Security Reachability Analysis
-Go beyond simple CVE lists. Dede-Java traces vulnerabilities from a library to the public UI (HTL), allowing you to prioritize risks by their **Blast Radius**.
+**Dede-Java** is a next-generation architectural "Digital Twin" engine for AEM, Sling, and OSGi ecosystems.
 
 ---
 
-## 3. Getting Started
+### 📜 Credits & Inspiration
+This project is deeply inspired by and built as a Java-based evolution of the excellent [**dede**](https://github.com/mitkox/dede) tool created by **Mitko Kolev**. 
 
-### 🚀 Local Execution (CLI)
-Build the project:
+We maintain full feature parity with the original `dede` while extending its reach into the AEM-specific "Sling Waterfall" (HTL -> Models -> JCR -> Dispatcher).
+
+---
+
+### 🚀 Core Feature Parity (Legacy Dede)
+`dede-java` provides 100% of the core capabilities found in the original tool:
+*   **OSGi Dependency Analysis**: Traces `Import-Package` and `Export-Package` wires across bundles.
+*   **Service Topology**: Maps `@Component` providers to `@Reference` consumers.
+*   **Transitive Closure**: Calculates the full impact of a bundle or service across the entire OSGi registry.
+*   **Circular Dependency Detection**: Identifies cycles in your service or bundle graphs that cause startup "flapping."
+*   **Visual Graphing**: Generates industry-standard DOT files for visualization in Graphviz.
+
+### 🌟 Extended Intelligence (Dede-Java v0.8.x)
+Beyond the original OSGi scope, this tool adds:
+*   **Sling Waterfall Traceability**: Traces HTL `data-sly-use` ➡️ Sling Models ➡️ OSGi Services.
+*   **JCR Content Bridge**: Proves if a Java component is "Zombie Code" by checking for its instantiation in `.content.xml` files.
+*   **Dispatcher Reachability**: Links infrastructure `/filter` rules to Java Servlets to identify public attack surfaces.
+*   **Security Shield**: XXE-hardened XML parsing and automatic secret sanitization.
+*   **AI Refactoring Engine**: Suggests architectural improvements (e.g., God Bundle splitting, Zombie removal).
+
+---
+
+### 🛠️ Quick Start
 ```bash
+# Build the executable
 mvn clean package -DskipTests
-```
-Run a scan:
-```bash
-java -jar target/dede-java-0.0.1-SNAPSHOT-exec.jar <path-to-aem-project> --security --rules my-rules.json
-```
 
-### 🐳 Docker Deployment
-```bash
-docker build -t dede-java .
-docker run -v $(pwd):/app/scan dede-java /app/scan --security
+# Scan an AEM project
+java -jar target/dede-java-0.0.1-SNAPSHOT-exec.jar /path/to/project --profiles aem
 ```
 
-### 🧩 AEM / OSGi Deployment
-1.  Deploy `target/dede-java-0.0.1-SNAPSHOT.jar` to AEM via the Web Console.
-2.  Use the `DedeOsgiScanner` service from the AEM Groovy Console or MCP to perform live runtime analysis.
-
----
-
-## 4. Architectural Documentation
-For a deep dive into the engine's design, see:
-*   [Architecture Guide](docs/architecture.md)
-*   [Security Reachability Analysis](docs/SECURITY_AUDIT.md)
-*   [AEM Analyser Complement](docs/AEM_ANALYSER_COMPLIMENT.md)
+### 📊 Export Formats
+*   `architecture.dot`: For visual analysis.
+*   `architecture.json`: For web-based D3.js or Sigma.js dashboards.
+*   `hierarchical.json`: Optimized for Sunburst or Tree-map visualizations.

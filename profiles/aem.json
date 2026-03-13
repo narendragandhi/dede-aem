@@ -1,13 +1,25 @@
 {
   "mappings": [
     {
-      "annotationName": "SlingServletResourceTypes", "nodeType": "OSGI_COMPONENT", "attributeName": "resourceTypes", "relationship": "REFERENCES", "idPrefix": "res:"
+      "annotationName": "Model",
+      "attributeName": "resourceType",
+      "idPrefix": "resType:",
+      "nodeType": "JCR_RESOURCE_TYPE",
+      "relationship": "INSTANTIATED_BY"
     },
     {
-      "annotationName": "Model", "nodeType": "SLING_MODEL", "attributeName": "resourceType", "relationship": "ADAPTS_TO", "idPrefix": "res:"
+      "annotationName": "Component",
+      "attributeName": "service",
+      "idPrefix": "svc:",
+      "nodeType": "OSGI_SERVICE",
+      "relationship": "PROVIDES"
     },
     {
-      "annotationName": "Configuration", "nodeType": "SLING_CACONFIG", "attributeName": "label", "relationship": "CONFIG_BY", "idPrefix": "caconfig:"
+      "annotationName": "Reference",
+      "attributeName": "value",
+      "idPrefix": "svc:",
+      "nodeType": "OSGI_SERVICE",
+      "relationship": "CONSUMES"
     }
   ]
 }

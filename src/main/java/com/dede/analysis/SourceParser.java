@@ -81,7 +81,18 @@ public class SourceParser implements ProjectParser {
         CodeNode packageNode = new CodeNode("pkg:" + packageName, packageName, NodeType.PACKAGE, packageName, null);
         graphService.addNode(packageNode);
 
-        cu.getTypes().forEach(type -> visitType(type, packageNode, filePath));
+        String imports = cu.getImports().stream()
+                .map(i -> i.getNameAsString())
+                .collect(java.util.stream.Collectors.joining(","));
+
+        cu.getTypes().forEach(type -> {
+            visitType(type, packageNode, filePath);
+            // Attach imports to the class node for legacy analysis
+            String fullSignature = packageName + "." + type.getNameAsString();
+            graphService.findNodeById("class:" + fullSignature).ifPresent(n -> {
+                n.getProperties().put("imports", imports);
+            });
+        });
     }
 
     private void visitType(TypeDeclaration<?> type, CodeNode parentPackage, String filePath) {

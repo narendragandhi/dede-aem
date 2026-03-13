@@ -26,7 +26,17 @@ public class GraphAgentSkills {
     public List<String> suggestRefactoring() {
         List<String> suggestions = new ArrayList<>();
 
-        // 1. Detect God Bundles (High Fan-In/Fan-Out)
+        // 1. Detect Circular Dependencies (Core Legacy Dede Feature)
+        Set<Set<CodeNode>> cycles = graphService.findCycles();
+        if (!cycles.isEmpty()) {
+            cycles.forEach(cycle -> {
+                String ids = cycle.stream().map(CodeNode::getId).collect(Collectors.joining(", "));
+                suggestions.add("CRITICAL [Circular Dependency]: Cycle detected between [" + ids + 
+                    "]. This can cause OSGi startup flapping and inconsistent service states. (Legacy Dede Feature)");
+            });
+        }
+
+        // 2. Detect God Bundles (High Fan-In/Fan-Out)
         graphService.getAllNodes().stream()
             .filter(n -> n.getType() == NodeType.BUNDLE)
             .forEach(bundle -> {
@@ -37,16 +47,6 @@ public class GraphAgentSkills {
                         (fanIn + fanOut) + " edges). Suggestion: Split into 'api', 'core-logic', and 'util' bundles.");
                 }
             });
-
-        // 2. Detect Circular Dependencies
-        Set<Set<CodeNode>> cycles = graphService.findCycles();
-        if (!cycles.isEmpty()) {
-            cycles.forEach(cycle -> {
-                String ids = cycle.stream().map(CodeNode::getId).collect(Collectors.joining(", "));
-                suggestions.add("REFACTOR [Circular Dependency]: Cycle detected between [" + ids + 
-                    "]. Suggestion: Move shared interfaces to a 'common-api' bundle to break the loop.");
-            });
-        }
 
         // 3. Detect Legacy AEM APIs (Cloud Readiness)
         List<CodeNode> legacyNodes = graphService.getAllNodes().stream()
@@ -61,35 +61,33 @@ public class GraphAgentSkills {
         // 4. Detect Dangling Services (Provided but not Consumed)
         List<CodeNode> dangling = graphService.getAllNodes().stream()
             .filter(n -> n.getType() == NodeType.OSGI_SERVICE)
-            .filter(svc -> !"true".equals(svc.getProperties().get("isExported"))) // Filter out Public APIs
+            .filter(svc -> !"true".equals(svc.getProperties().get("isExported")))
             .filter(svc -> graphService.getInboundRelatedNodes(svc, RelationshipType.PROVIDES).stream().noneMatch(c -> c.getType() == NodeType.OSGI_COMPONENT))
+            .filter(svc -> graphService.getInboundRelatedNodes(svc, RelationshipType.CONSUMES).isEmpty())
             .limit(5)
             .toList();
         if (!dangling.isEmpty()) {
-            suggestions.add("REFACTOR [Dead Code]: Found " + dangling.size() + " OSGi services with zero consumers. " +
-                "Suggestion: Verify if these are still needed or safely remove them to reduce OSGi registry bloat.");
+            suggestions.add("REFACTOR [Dead Code]: Found OSGi services with zero consumers (e.g., " + dangling.get(0).getName() + ").");
         }
 
-        // 5. Detect ClientLib Bloat
-        graphService.getAllNodes().stream()
-            .filter(n -> n.getType() == NodeType.CLIENTLIB)
-            .forEach(lib -> {
-                long embeds = graphService.getOutgoingNodes(lib).size();
-                if (embeds > 10) {
-                    suggestions.add("REFACTOR [ClientLib Bloat]: Category '" + lib.getName() + "' embeds " + embeds + 
-                        " other libraries. Suggestion: Consider 'dependencies' instead of 'embed' to improve page load caching.");
-                }
-            });
+        // 5. Detect Legacy AEM APIs
+        long legacyCount = graphService.getAllNodes().stream()
+            .filter(n -> n.getFilePath() != null && n.getFilePath().endsWith(".java"))
+            .filter(n -> n.getProperties().getOrDefault("imports", "").contains("com.day.cq"))
+            .count();
+        if (legacyCount > 0) {
+            suggestions.add("REFACTOR [AEM Cloud]: Legacy 'com.day.cq' APIs found in " + legacyCount + " locations. Suggestion: Modernize to 'com.adobe.granite' or 'org.apache.sling' equivalents.");
+        }
 
         // 6. Detect Zombie Resource Types (Code exists but not in Content)
         graphService.getAllNodes().stream()
             .filter(n -> n.getType() == NodeType.JCR_RESOURCE_TYPE)
-            .filter(res -> !"true".equals(res.getProperties().get("isExported"))) // Filter out Shared Components
+            .filter(res -> !"true".equals(res.getProperties().get("isExported")))
             .forEach(res -> {
                 boolean hasContent = !graphService.getInboundRelatedNodes(res, RelationshipType.INSTANTIATED_BY).isEmpty();
                 boolean hasHtl = !graphService.getInboundRelatedNodes(res, RelationshipType.REFERENCES).isEmpty();
                 if (!hasContent && !hasHtl) {
-                    suggestions.add("REFACTOR [Zombie Code]: ResourceType '" + res.getName() + "' has associated Java logic but is never instantiated in JCR content. Suggestion: Verify if this component is deprecated and can be removed.");
+                    suggestions.add("REFACTOR [Zombie Code]: ResourceType '" + res.getName() + "' is defined in code but never instantiated in JCR content or HTL.");
                 }
             });
 

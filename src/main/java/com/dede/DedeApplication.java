@@ -26,7 +26,7 @@ public class DedeApplication {
                                              GraphService graphService, GovernanceEngine governance,
                                              VulnerabilityService security, GraphAgentSkills agent) {
         return args -> {
-            if (args.length == 0) {
+            if (args.length == 0 || "--help".equals(args[0]) || "-h".equals(args[0])) {
                 printHelp();
                 return;
             }
@@ -52,8 +52,7 @@ public class DedeApplication {
                 }
             }
 
-            System.out.println("🚀 Dede-Java Architectural Intelligence Engine v0.0.1");
-            System.out.println("--------------------------------------------------");
+            printBanner();
 
             sourceParser.loadProfiles(profiles.split(","));
             scanner.scan(projectPath);
@@ -93,6 +92,12 @@ public class DedeApplication {
                 suggestions.forEach(s -> System.out.println("   💡 " + s));
             }
         };
+    }
+
+    private void printBanner() {
+        System.out.println("🚀 Dede-Java Architectural Intelligence Engine v0.8.1");
+        System.out.println("Inspired by Mitko Kolev's 'dede' (https://github.com/mitkox/dede)");
+        System.out.println("--------------------------------------------------");
     }
 
     private void printHelp() {

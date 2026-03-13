@@ -84,6 +84,40 @@ AEM Cloud Service enforces a strict separation of "Immutable" (`/apps`, `/libs`)
 *   **Run Mode Ambiguity:** Use of generic `config.author` or `config.publish` folders without environment-specific suffixes (`.dev`, `.stage`, `.prod`) which can lead to "Configuration Drift."
 *   **Service User Leakage:** Identification of code that still attempts to use `session.loginAdministrative()` or `resourceResolverFactory.getAdministrativeResourceResolver()` (Both are strictly blocked in AEMaaCS).
 
+## 11. Testing & Verification (The "Quality" Loop)
+To maintain its "Expert-Grade" status, `dede-java` provides built-in verification mechanisms for both its OSGi and Standalone distributions.
+
+### A. OSGi Bundle Validation
+Verify that the generated JAR is a valid OSGi bundle by inspecting the `MANIFEST.MF` headers:
+```bash
+unzip -p target/dede-java-*.jar META-INF/MANIFEST.MF | grep -E "Bundle-SymbolicName|Export-Package|Import-Package|Service-Component"
+```
+*   **Symbolic Name:** Must be `com.dede.dede-java`.
+*   **Export-Package:** Must include `com.dede.osgi`, `com.dede.core.model`, `com.dede.core`, and `com.dede.analysis`.
+*   **Service-Component:** Must reference `OSGI-INF/com.dede.osgi.DedeOsgiScanner.xml`.
+
+### B. SCR Metadata Verification
+Ensure the Declarative Services (SCR) metadata is correctly generated for AEM deployment:
+```bash
+unzip -p target/dede-java-*.jar OSGI-INF/com.dede.osgi.DedeOsgiScanner.xml
+```
+*   The component must `provide` the `DedeOsgiScanner` interface and `reference` the `ProjectScanner` interface.
+
+### C. Spring Boot CLI Verification
+Verify that the executable JAR can run in a non-interactive/CI environment:
+```bash
+java -jar target/dede-java-*-exec.jar . --profiles aem --dot target/output.dot
+```
+*   This command performs a full scan of the current directory, generates an architectural graph in DOT format, and outputs AI-driven refactoring suggestions.
+
+### D. Docker Image Build
+Verify the multi-stage `Dockerfile` by building the image locally:
+```bash
+docker build -t dede-java:latest .
+```
+*   **Stage 1:** Uses Maven 3.9.6 to build the bundle and executable JAR.
+*   **Stage 2:** Uses a lightweight JRE 21 image for the final runtime, ensuring a small attack surface and efficient container startup.
+
 ---
 
 ## Technical Litmus Test for Experts

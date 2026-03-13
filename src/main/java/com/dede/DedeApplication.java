@@ -34,6 +34,7 @@ public class DedeApplication {
             String projectPath = args[0];
             String rulesPath = null;
             String dotOutputPath = null;
+            String analyzeNodeId = null;
             boolean checkSecurity = false;
             String profiles = "aem"; // Default
 
@@ -43,6 +44,9 @@ public class DedeApplication {
                 }
                 if ("--dot".equals(args[i]) && i + 1 < args.length) {
                     dotOutputPath = args[i + 1];
+                }
+                if ("--analyze".equals(args[i]) && i + 1 < args.length) {
+                    analyzeNodeId = args[i + 1];
                 }
                 if ("--security".equals(args[i])) {
                     checkSecurity = true;
@@ -56,6 +60,11 @@ public class DedeApplication {
 
             sourceParser.loadProfiles(profiles.split(","));
             scanner.scan(projectPath);
+
+            if (analyzeNodeId != null) {
+                System.out.println("\n🔍 Human Insight: Impact Analysis for '" + analyzeNodeId + "'");
+                System.out.println(agent.analyzeImpact(analyzeNodeId));
+            }
 
             if (rulesPath != null) {
                 governance.loadRules(new File(rulesPath));

@@ -45,9 +45,29 @@ The "Configurability Layer" that prevents the tool from being "Too Generic."
 
 ---
 
-## 🛡️ High-Confidence Intelligence (v0.7.0)
+## 🏛️ Engineering Standards (v1.0.0)
 
-To minimize false positives in large-scale repositories (like AEM Core Components), `dede-java` implements a precision scoring system.
+`dede-java` is built to the highest enterprise standards, serving as a reference implementation for seasoned AEM architects.
+
+### 1. Domain-Driven Design (DDD)
+The project is organized into **Bounded Contexts** to ensure a clean separation of concerns:
+- **`com.dede.domain`**: The core graph model and relationship logic.
+- **`com.dede.discovery`**: Pluggable strategies for project scanning and parsing.
+- **`com.dede.intelligence`**: High-level graph analysis (Cycles, Centrality, AI).
+- **`com.dede.governance`**: Policy enforcement (BMAD, Gastown, BEADS compliance).
+
+### 2. Test-Driven Development (TDD)
+All core architectural rules are implemented via TDD. Our governance engine is verified by comprehensive unit tests that simulate complex AEM dependency scenarios before the logic is integrated.
+
+### 3. AEM Pattern Compliance (BMAD/BEADS/Gastown)
+The tool is "Pattern Aware." It doesn't just scan code; it understands the intent of modern AEM frameworks:
+- **BMAD Audit**: Enforces strict layering between Platform and Business bundles.
+- **Gastown Check**: Validates Sling Model to ResourceType mappings.
+- **BEADS Verification**: Ensures content-first dependency chains are maintained.
+
+---
+
+## 🛡️ High-Confidence Intelligence (v0.7.0+)
 
 ### 1. Confidence Scoring
 Every relationship in the graph has a `confidence` score (0-100%):

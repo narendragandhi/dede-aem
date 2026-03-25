@@ -4,30 +4,49 @@ import com.dede.domain.model.CodeNode;
 import com.dede.domain.model.NodeType;
 import com.dede.domain.model.Relationship;
 import com.dede.domain.model.RelationshipType;
+import com.dede.exception.ConfigurationException;
+import com.dede.exception.ErrorCode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.jgrapht.Graph;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.regex.Pattern;
 
 @Service
 public class GovernanceEngine {
 
+    private static final Logger log = LoggerFactory.getLogger(GovernanceEngine.class);
+
     private GuardrailRules rules;
     private final List<String> violations = new ArrayList<>();
     private final ObjectMapper mapper = new ObjectMapper();
 
-    public void loadRules(File rulesFile) throws IOException {
-        this.rules = mapper.readValue(rulesFile, GuardrailRules.class);
+    public void loadRules(File rulesFile) {
+        log.info("Loading governance rules from: {}", rulesFile.getAbsolutePath());
+        try {
+            this.rules = mapper.readValue(rulesFile, GuardrailRules.class);
+            log.info("Loaded {} governance rules", rules.getRules() != null ? rules.getRules().size() : 0);
+        } catch (IOException e) {
+            log.error("Failed to load governance rules: {}", e.getMessage(), e);
+            throw new ConfigurationException(ErrorCode.RULES_PARSE_ERROR,
+                "Failed to load governance rules: " + e.getMessage(), rulesFile.getAbsolutePath(), e);
+        }
     }
 
     public void validate(Graph<CodeNode, Relationship> graph) {
+        log.info("Validating graph against governance rules");
         violations.clear();
-        if (rules == null || rules.getRules() == null) return;
+        if (rules == null || rules.getRules() == null) {
+            log.debug("No governance rules configured, skipping validation");
+            return;
+        }
 
         for (GuardrailRules.Rule rule : rules.getRules()) {
             Pattern sourcePattern = Pattern.compile(rule.getSourcePattern());
@@ -43,11 +62,15 @@ public class GovernanceEngine {
                     boolean targetMatch = targetPattern.matcher(target.getId()).find() || targetPattern.matcher(target.getName()).find();
 
                     if (sourceMatch && targetMatch && rule.getConstraint() == GuardrailRules.Constraint.DENY) {
-                        violations.add("Governance Violation: " + rule.getDescription() + 
-                            " (" + source.getName() + " -> " + target.getName() + ")");
+                        String violation = "Governance Violation: " + rule.getDescription() +
+                            " (" + source.getName() + " -> " + target.getName() + ")";
+                        violations.add(violation);
+                        log.warn("Governance violation detected: {}", violation);
                     }
                 });
         }
+
+        log.info("Governance validation completed with {} violations", violations.size());
     }
 
     /**
@@ -77,12 +100,16 @@ public class GovernanceEngine {
         return bmadViolations;
     }
 
+    public List<String> getViolations() {
+        return Collections.unmodifiableList(violations);
+    }
+
     public void printViolations() {
         if (violations.isEmpty()) {
-            System.out.println("✅ Governance: No violations found.");
+            log.info("Governance: No violations found");
         } else {
-            System.out.println("❌ Governance Violations:");
-            violations.forEach(v -> System.out.println("   - " + v));
+            log.warn("Governance Violations found: {}", violations.size());
+            violations.forEach(v -> log.warn("  - {}", v));
         }
     }
 }

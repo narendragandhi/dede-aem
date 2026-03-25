@@ -1,0 +1,1095 @@
+{
+  "version": "2.0",
+  "lastUpdated": "2025-03-24",
+  "description": "AEM Cloud Service code quality rules, forbidden APIs, deprecated patterns, and path restrictions. Based on Cloud Manager CodeQuality-rules-latest-CS.xlsx and Adobe Experience League documentation.",
+  "references": [
+    "https://experienceleague.adobe.com/docs/experience-manager-cloud-service/assets/CodeQuality-rules-latest-CS.xlsx",
+    "https://experienceleague.adobe.com/en/docs/experience-manager-cloud-service/content/implementing/using-cloud-manager/test-results/custom-code-quality-rules",
+    "https://experienceleague.adobe.com/en/docs/experience-manager-cloud-service/content/implementing/using-cloud-manager/test-results/code-quality-testing",
+    "https://experienceleague.adobe.com/docs/experience-manager-cloud-service/content/migration-journey/refactoring-tools/overview.html",
+    "https://experienceleague.adobe.com/docs/experience-manager-cloud-service/content/implementing/developing/aem-project-content-package-structure.html",
+    "https://experienceleague.adobe.com/docs/experience-manager-cloud-service/content/implementing/deploying/configuring-osgi.html",
+    "https://experienceleague.adobe.com/docs/experience-manager-cloud-service/content/security/service-users.html",
+    "https://github.com/wttech/AEM-Rules-for-SonarQube"
+  ],
+  "categories": [
+    {
+      "name": "INTERNAL_API",
+      "description": "Internal implementation APIs that are not part of the public API",
+      "severity": "CRITICAL",
+      "packages": [
+        "com.day.cq.*.impl",
+        "com.adobe.granite.*.impl",
+        "org.apache.sling.*.impl",
+        "com.adobe.cq.*.impl"
+      ],
+      "replacement": "Use public API interfaces instead of implementation classes"
+    },
+    {
+      "name": "DEPRECATED_REPLICATION",
+      "description": "Deprecated replication APIs",
+      "severity": "HIGH",
+      "classes": [
+        "com.day.cq.replication.ReplicationActionType",
+        "com.day.cq.replication.ReplicationException",
+        "com.day.cq.replication.ReplicationOptions",
+        "com.day.cq.replication.ReplicationQueue",
+        "com.day.cq.replication.ReplicationResult",
+        "com.day.cq.replication.ReplicationStatus",
+        "com.day.cq.replication.Replicator"
+      ],
+      "replacement": "Use Sling Content Distribution API (org.apache.sling.distribution)"
+    },
+    {
+      "name": "DEPRECATED_WORKFLOW",
+      "description": "Deprecated workflow APIs - use Sling Jobs instead",
+      "severity": "HIGH",
+      "classes": [
+        "com.day.cq.workflow.WorkflowSession",
+        "com.day.cq.workflow.exec.WorkflowProcess",
+        "com.day.cq.workflow.exec.WorkItem",
+        "com.day.cq.workflow.metadata.MetaDataMap",
+        "com.day.cq.workflow.model.WorkflowModel"
+      ],
+      "packages": [
+        "com.day.cq.workflow"
+      ],
+      "replacement": "Use org.apache.sling.event.jobs.JobManager for background processing"
+    },
+    {
+      "name": "ADMIN_SESSION",
+      "description": "Administrative session methods that bypass ACLs",
+      "severity": "CRITICAL",
+      "methods": [
+        "loginAdministrative",
+        "getAdministrativeResourceResolver",
+        "impersonateUsingAdministrator"
+      ],
+      "classes": [
+        "org.apache.sling.jcr.api.SlingRepository"
+      ],
+      "replacement": "Use service users with ServiceUserMapped interface"
+    },
+    {
+      "name": "DEPRECATED_QUERY",
+      "description": "Deprecated query methods",
+      "severity": "MEDIUM",
+      "methods": [
+        "findResources",
+        "queryResources"
+      ],
+      "replacement": "Use QueryBuilder API or Oak index-based queries"
+    },
+    {
+      "name": "CLASSIC_UI",
+      "description": "Classic UI components and widgets (deprecated)",
+      "severity": "MEDIUM",
+      "packages": [
+        "com.day.cq.wcm.commons.WCMUtils",
+        "com.day.cq.wcm.core.components.internal.contentfragment"
+      ],
+      "classes": [
+        "com.day.cq.wcm.foundation.TextFormat"
+      ],
+      "replacement": "Use Touch UI / Coral UI components"
+    },
+    {
+      "name": "DEPRECATED_DAM",
+      "description": "Deprecated DAM APIs",
+      "severity": "HIGH",
+      "classes": [
+        "com.day.cq.dam.api.AssetManager",
+        "com.day.cq.dam.api.handler.AssetHandler",
+        "com.day.cq.dam.core.impl.handler.StandardImageHandler"
+      ],
+      "methods": [
+        "createAsset",
+        "getRendition"
+      ],
+      "replacement": "Use Asset Compute microservices for rendition processing"
+    },
+    {
+      "name": "DEPRECATED_TAGGING",
+      "description": "Deprecated tagging APIs",
+      "severity": "MEDIUM",
+      "classes": [
+        "com.day.cq.tagging.TagManager",
+        "com.day.cq.tagging.Tag"
+      ],
+      "replacement": "Use cq:tags property directly or new Tagging API"
+    },
+    {
+      "name": "SCHEDULER_DIRECT",
+      "description": "Direct scheduler usage without distributed coordination",
+      "severity": "HIGH",
+      "classes": [
+        "org.apache.sling.commons.scheduler.Scheduler"
+      ],
+      "annotations": [
+        "org.apache.sling.commons.scheduler.Scheduler"
+      ],
+      "replacement": "Use Sling Jobs with proper distributed locking for cluster-safe scheduling"
+    },
+    {
+      "name": "DEPRECATED_AUTH",
+      "description": "Deprecated authentication APIs",
+      "severity": "HIGH",
+      "methods": [
+        "loginAdministrative",
+        "impersonate"
+      ],
+      "classes": [
+        "org.apache.jackrabbit.api.security.authentication.token.TokenCredentials"
+      ],
+      "replacement": "Use IMS authentication and service users"
+    },
+    {
+      "name": "DEPRECATED_SOCIAL",
+      "description": "Deprecated AEM Communities/Social APIs",
+      "severity": "CRITICAL",
+      "packages": [
+        "com.adobe.cq.social"
+      ],
+      "replacement": "AEM Communities is deprecated - use third-party solutions"
+    },
+    {
+      "name": "DEPRECATED_SCENE7",
+      "description": "Deprecated Scene7/Dynamic Media Classic APIs",
+      "severity": "HIGH",
+      "packages": [
+        "com.day.cq.dam.scene7"
+      ],
+      "replacement": "Use Dynamic Media with OpenAPI delivery"
+    },
+    {
+      "name": "LOCAL_BINARY_STORAGE",
+      "description": "Direct binary storage access (not compatible with cloud storage)",
+      "severity": "CRITICAL",
+      "classes": [
+        "org.apache.jackrabbit.oak.plugins.blob.BlobStoreBlob"
+      ],
+      "methods": [
+        "getDataStore",
+        "getBinaryManager"
+      ],
+      "replacement": "Use standard JCR Binary API - cloud uses blob storage"
+    },
+    {
+      "name": "SERVLET_DEPRECATED",
+      "description": "Deprecated servlet patterns",
+      "severity": "MEDIUM",
+      "classes": [
+        "org.apache.sling.api.servlets.SlingAllMethodsServlet",
+        "com.day.cq.commons.servlets.AbstractPredicateServlet"
+      ],
+      "replacement": "Use Sling Model Exporter or specific HTTP method servlets"
+    },
+    {
+      "name": "PROVIDER_TYPE_IMPLEMENTATION",
+      "description": "Customer code implementing or extending @ProviderType APIs",
+      "severity": "CRITICAL",
+      "ruleId": "CQBP-84",
+      "annotations": [
+        "org.osgi.annotation.versioning.ProviderType"
+      ],
+      "replacement": "Never implement @ProviderType interfaces - use them as provided by AEM"
+    },
+    {
+      "name": "THREAD_UNSAFE_FIELDS",
+      "description": "Non-thread-safe objects stored as class fields",
+      "severity": "CRITICAL",
+      "ruleId": "AEM-3",
+      "classes": [
+        "org.apache.sling.api.resource.ResourceResolver",
+        "javax.jcr.Session",
+        "com.day.cq.wcm.api.PageManager",
+        "com.day.cq.dam.api.AssetManager"
+      ],
+      "replacement": "Obtain these objects fresh for each request - do not store as class fields"
+    },
+    {
+      "name": "UNCLOSED_RESOURCE_RESOLVER",
+      "description": "ResourceResolver not closed properly",
+      "severity": "HIGH",
+      "ruleId": "CQRules:CQBP-72",
+      "classes": [
+        "org.apache.sling.api.resource.ResourceResolver"
+      ],
+      "replacement": "Always close ResourceResolver using try-with-resources or explicit close()"
+    },
+    {
+      "name": "HTTP_CLIENT_TIMEOUT",
+      "description": "HTTP requests without timeout configuration",
+      "severity": "CRITICAL",
+      "ruleId": "CQRules:ConnectionTimeoutMechanism",
+      "classes": [
+        "org.apache.http.client.HttpClient",
+        "java.net.HttpURLConnection"
+      ],
+      "replacement": "Configure socket and connect timeouts (60 seconds or less)"
+    },
+    {
+      "name": "SERVLET_PATH_BINDING",
+      "description": "Servlets registered by path instead of resource type",
+      "severity": "HIGH",
+      "ruleId": "CQRules:CQBP-75",
+      "annotations": [
+        "sling.servlet.paths"
+      ],
+      "replacement": "Register servlets by resource type using sling.servlet.resourceTypes"
+    },
+    {
+      "name": "DANGEROUS_THREAD_METHODS",
+      "description": "Potentially dangerous thread methods",
+      "severity": "HIGH",
+      "ruleId": "CQRules:CWE-676",
+      "methods": [
+        "Thread.stop",
+        "Thread.suspend",
+        "Thread.resume",
+        "Thread.interrupt"
+      ],
+      "replacement": "Use message passing and cooperative thread termination patterns"
+    },
+    {
+      "name": "CONSOLE_OUTPUT",
+      "description": "Direct console output instead of logging",
+      "severity": "MEDIUM",
+      "ruleId": "CQRules:CQBP-44---LogLevelConsolePrinters",
+      "methods": [
+        "System.out.println",
+        "System.err.println",
+        "printStackTrace"
+      ],
+      "replacement": "Use SLF4J logging framework"
+    },
+    {
+      "name": "HARDCODED_PATHS",
+      "description": "Hardcoded /apps and /libs paths in code",
+      "severity": "MEDIUM",
+      "ruleId": "CQRules:CQBP-71",
+      "patterns": [
+        "\"/libs/",
+        "\"/apps/"
+      ],
+      "replacement": "Use relative paths or resource type resolution"
+    },
+    {
+      "name": "SLING_SCHEDULER_DIRECT",
+      "description": "Direct Sling Scheduler usage (not cluster-safe)",
+      "severity": "MEDIUM",
+      "ruleId": "CQRules:AMSCORE-554",
+      "classes": [
+        "org.apache.sling.commons.scheduler.Scheduler"
+      ],
+      "replacement": "Use Sling Jobs API for guaranteed cluster-safe execution"
+    },
+    {
+      "name": "INJECT_WITH_OPTIONAL",
+      "description": "@Inject with @Optional or DefaultInjectionStrategy.OPTIONAL",
+      "severity": "MEDIUM",
+      "ruleId": "InjectAnnotationWithOptionalInjectionCheck",
+      "annotations": [
+        "org.apache.sling.models.annotations.injectorspecific.Self",
+        "javax.inject.Inject"
+      ],
+      "replacement": "Use specific injectors like @ValueMapValue or @OsgiInjector"
+    },
+    {
+      "name": "HTTP_CLIENT_REUSE",
+      "description": "HTTPClient instances created per-method instead of reused",
+      "severity": "MEDIUM",
+      "ruleId": "AEMSRE-870",
+      "classes": [
+        "org.apache.http.impl.client.HttpClients",
+        "org.apache.http.impl.client.CloseableHttpClient"
+      ],
+      "replacement": "Create HTTPClient at class level and reuse across method calls"
+    }
+  ],
+  "sonarQubeRules": [
+    {
+      "ruleId": "CQRules:CWE-676",
+      "name": "Do not use potentially dangerous functions",
+      "type": "Vulnerability",
+      "severity": "Major",
+      "since": "2018.4.0",
+      "description": "Methods like Thread.stop() create hard-to-reproduce issues"
+    },
+    {
+      "ruleId": "CQRules:CWE-134",
+      "name": "Do not use format strings that may be externally controlled",
+      "type": "Vulnerability",
+      "severity": "Major",
+      "since": "2018.4.0",
+      "description": "External format strings can cause denial of service attacks"
+    },
+    {
+      "ruleId": "CQRules:ConnectionTimeoutMechanism",
+      "name": "HTTP requests should always have socket and connect timeouts",
+      "type": "Bug",
+      "severity": "Critical",
+      "since": "2018.6.0",
+      "description": "HTTP timeouts must be 60 seconds or less"
+    },
+    {
+      "ruleId": "CQRules:CQBP-72",
+      "name": "Always close ResourceResolver objects",
+      "type": "Code Smell",
+      "severity": "Major",
+      "since": "2018.4.0",
+      "description": "ResourceResolver instances consume system resources"
+    },
+    {
+      "ruleId": "CQRules:CQBP-75",
+      "name": "Do not use Sling servlet paths to register servlets",
+      "type": "Code Smell",
+      "severity": "Major",
+      "since": "2018.4.0",
+      "description": "Path-bound servlets bypass standard JCR access controls"
+    },
+    {
+      "ruleId": "CQRules:CQBP-44---CatchAndEitherLogOrThrow",
+      "name": "Caught exceptions should be logged or thrown, not both",
+      "type": "Code Smell",
+      "severity": "Minor",
+      "since": "2018.4.0",
+      "description": "Avoid duplicate log entries from logging and throwing"
+    },
+    {
+      "ruleId": "CQRules:CQBP-44---LogInfoInGetOrHeadRequests",
+      "name": "Avoid logging at INFO when handling GET or HEAD requests",
+      "type": "Code Smell",
+      "severity": "Minor",
+      "description": "Use DEBUG or TRACE for GET/HEAD; reserve INFO for state-changing ops"
+    },
+    {
+      "ruleId": "CQRules:CQBP-44---ExceptionPrintStackTrace",
+      "name": "Do not print stack traces to the console",
+      "type": "Code Smell",
+      "severity": "Minor",
+      "description": "Use logging framework instead of printStackTrace()"
+    },
+    {
+      "ruleId": "CQRules:CQBP-71",
+      "name": "Avoid hardcoded apps and libs paths",
+      "type": "Code Smell",
+      "severity": "Minor",
+      "description": "Use relative paths instead of absolute /libs and /apps paths"
+    },
+    {
+      "ruleId": "CQRules:AMSCORE-554",
+      "name": "Do not use Sling scheduler",
+      "type": "Code Smell",
+      "severity": "Minor",
+      "cloudService": true,
+      "description": "Use Sling Jobs for guaranteed cluster-safe execution"
+    },
+    {
+      "ruleId": "java:S1874",
+      "name": "Do not use Experience Manager deprecated APIs",
+      "type": "Bug",
+      "severity": "Minor-Major",
+      "description": "Replace deprecated APIs with supported alternatives"
+    },
+    {
+      "ruleId": "AMSCORE-553",
+      "name": "Do not use Experience Manager deprecated APIs",
+      "type": "Code Smell",
+      "severity": "Minor",
+      "cloudService": true,
+      "description": "AEM-specific deprecated APIs no longer recommended"
+    },
+    {
+      "ruleId": "InjectAnnotationWithOptionalInjectionCheck",
+      "name": "Do not use @Inject annotation with @Optional in Sling Models",
+      "type": "Code Smell",
+      "severity": "Minor",
+      "description": "Use @ValueMapValue or @OsgiInjector instead"
+    },
+    {
+      "ruleId": "AEMSRE-870",
+      "name": "Reuse instances of a HTTPClient",
+      "type": "Code Smell",
+      "severity": "Minor",
+      "description": "Create HTTPClient at class level to minimize overhead"
+    }
+  ],
+  "oakPalRules": [
+    {
+      "ruleId": "CQBP-84",
+      "name": "Do not implement or extend @ProviderType APIs",
+      "type": "Bug",
+      "severity": "Critical",
+      "description": "Never implement interfaces marked @ProviderType"
+    },
+    {
+      "ruleId": "IndexTikaNode",
+      "name": "Custom Lucene Oak indexes must have a Tika configuration",
+      "type": "Bug",
+      "severity": "Blocker",
+      "description": "Include tika node with config.xml for damAssetLucene, lucene, or graphqlConfig"
+    },
+    {
+      "ruleId": "IndexAsyncProperty",
+      "name": "Custom Lucene Oak Indexes must not be synchronous",
+      "type": "Bug",
+      "severity": "Blocker",
+      "description": "Set async property on all lucene type indexes"
+    },
+    {
+      "ruleId": "IndexDamAssetLucene",
+      "name": "Custom DAM Asset Lucene Oak indexes must be properly structured",
+      "type": "Bug",
+      "severity": "Blocker",
+      "description": "Include tags property with visualSimilaritySearch in damAssetLucene"
+    },
+    {
+      "ruleId": "BannedPath",
+      "name": "Customer packages should not create or modify nodes under libs",
+      "type": "Bug",
+      "severity": "Critical",
+      "description": "Never modify /libs content"
+    },
+    {
+      "ruleId": "DuplicateOsgiConfigurations",
+      "name": "Packages should not contain duplicate OSGi configurations",
+      "type": "Bug",
+      "severity": "Major",
+      "description": "Same OSGi component should not be configured multiple times"
+    },
+    {
+      "ruleId": "ConfigAndInstallShouldOnlyContainOsgiNodes",
+      "name": "Config and install folders should only contain OSGi nodes",
+      "type": "Bug",
+      "severity": "Major",
+      "description": "Restrict /config/ and /install/ to OSGi configurations and bundles"
+    },
+    {
+      "ruleId": "PackageOverlaps",
+      "name": "Packages should not overlap",
+      "type": "Bug",
+      "severity": "Major",
+      "description": "Avoid multiple packages writing to same node paths"
+    },
+    {
+      "ruleId": "ClassicUIAuthoringMode",
+      "name": "The default authoring mode should not be classic UI",
+      "type": "Code Smell",
+      "severity": "Minor",
+      "cloudService": true,
+      "description": "Configure Touch UI as default authoring mode"
+    },
+    {
+      "ruleId": "ComponentWithOnlyClassicUIDialog",
+      "name": "Components with dialogs should have Touch UI dialogs",
+      "type": "Code Smell",
+      "severity": "Minor",
+      "cloudService": true,
+      "description": "Provide Touch UI dialogs for all Classic UI dialogs"
+    },
+    {
+      "ruleId": "ImmutableMutableMixedPackage",
+      "name": "Packages should not mix mutable and immutable content",
+      "type": "Code Smell",
+      "severity": "Minor",
+      "cloudService": true,
+      "description": "Separate /apps, /libs content from other repository areas"
+    },
+    {
+      "ruleId": "ReverseReplication",
+      "name": "Do not use reverse replication agents",
+      "type": "Code Smell",
+      "severity": "Minor",
+      "cloudService": true,
+      "description": "Reverse replication not supported in Cloud Service"
+    },
+    {
+      "ruleId": "ClientlibProxyResource",
+      "name": "Proxy-enabled clientlib resources should be in resources folder",
+      "type": "Bug",
+      "severity": "Minor",
+      "description": "Place static assets in resources subfolder for proxy-enabled clientlibs"
+    },
+    {
+      "ruleId": "CloudServiceIncompatibleWorkflowProcess",
+      "name": "Usage of Cloud Service incompatible workflow processes",
+      "type": "Bug",
+      "severity": "Major",
+      "description": "Update deprecated asset workflows to use asset micro-services"
+    },
+    {
+      "ruleId": "StaticTemplateUsage",
+      "name": "Usage of static templates is discouraged",
+      "type": "Code Smell",
+      "severity": "Minor",
+      "description": "Migrate static templates to editable templates"
+    },
+    {
+      "ruleId": "LegacyFoundationComponentUsage",
+      "name": "Usage of legacy foundation components is discouraged",
+      "type": "Code Smell",
+      "severity": "Minor",
+      "description": "Replace Foundation Components with Core Components"
+    },
+    {
+      "ruleId": "SupportedRunmode",
+      "name": "Only use supported run mode names and ordering",
+      "type": "Code Smell",
+      "severity": "Minor",
+      "description": "Follow official run mode naming and ordering conventions"
+    },
+    {
+      "ruleId": "OakIndexLocation",
+      "name": "Index definitions must be direct children of /oak:index",
+      "type": "Code Smell",
+      "severity": "Minor",
+      "description": "Place index definitions only as direct children of /oak:index"
+    },
+    {
+      "ruleId": "IndexCompatVersion",
+      "name": "Index definitions must have compatVersion of 2",
+      "type": "Code Smell",
+      "severity": "Minor",
+      "description": "Set compatVersion property to 2"
+    },
+    {
+      "ruleId": "IndexDescendantNodeType",
+      "name": "Index descendant nodes must be nt:unstructured",
+      "type": "Code Smell",
+      "severity": "Minor",
+      "description": "Use only nt:unstructured for child nodes under index definitions"
+    },
+    {
+      "ruleId": "IndexRulesNode",
+      "name": "Index definitions must contain indexRules with children",
+      "type": "Code Smell",
+      "severity": "Minor",
+      "description": "Include indexRules node with at least one child"
+    },
+    {
+      "ruleId": "IndexType",
+      "name": "Index definitions must use Lucene index type",
+      "type": "Bug",
+      "severity": "Blocker",
+      "description": "Use only Lucene index type"
+    },
+    {
+      "ruleId": "IndexSeedProperty",
+      "name": "Index definitions must not contain seed property",
+      "type": "Code Smell",
+      "severity": "Minor",
+      "description": "Remove seed property from custom index definitions"
+    },
+    {
+      "ruleId": "IndexReindexProperty",
+      "name": "Index definitions must not contain reindex property",
+      "type": "Code Smell",
+      "severity": "Minor",
+      "description": "Remove reindex property from custom index definitions"
+    },
+    {
+      "ruleId": "IndexNotUnderUIContent",
+      "name": "Index definitions must not be in UI content package",
+      "type": "Improvement",
+      "severity": "Minor",
+      "description": "Deploy custom index definitions in code packages"
+    },
+    {
+      "ruleId": "RestrictIndexCustomization",
+      "name": "Certain out-of-the-box index definitions cannot be customized",
+      "type": "Improvement",
+      "severity": "Minor",
+      "description": "Cannot customize: nodetypeLucene, slingResourceResolver, socialLucene, appsLibsLucene, authorizables, pathReference"
+    },
+    {
+      "ruleId": "AnalyzerTokenizerConfigCheck",
+      "name": "Tokenizers must use the name 'tokenizer'",
+      "type": "Improvement",
+      "severity": "Minor",
+      "description": "Name tokenizer configurations exactly 'tokenizer'"
+    }
+  ],
+  "aemSonarQubeRules": [
+    {
+      "ruleId": "AEM-1",
+      "name": "Hardcoded Constants in Annotations",
+      "category": "Best Practice",
+      "description": "Replace inline literals with predefined AEM constants"
+    },
+    {
+      "ruleId": "AEM-2",
+      "name": "Hardcoded Values",
+      "category": "Best Practice",
+      "description": "Use AEM-provided constants instead of repeating values"
+    },
+    {
+      "ruleId": "AEM-3",
+      "name": "Non-Thread-Safe Session Objects as Fields",
+      "category": "Critical",
+      "description": "Do not store ResourceResolver, Session, PageManager as class fields"
+    },
+    {
+      "ruleId": "AEM-5",
+      "name": "Null Check getContentResource()",
+      "category": "Best Practice",
+      "description": "Always null check the return value of getContentResource()"
+    },
+    {
+      "ruleId": "AEM-6",
+      "name": "ResourceResolver Cleanup",
+      "category": "Critical",
+      "description": "ResourceResolver life cycle ends with calling close()"
+    },
+    {
+      "ruleId": "AEM-7",
+      "name": "Session Logout",
+      "category": "Critical",
+      "description": "Manual sessions must be logged out to release resources"
+    },
+    {
+      "ruleId": "AEM-8",
+      "name": "Use @SlingServlet Annotation",
+      "category": "Best Practice",
+      "description": "Prefer @SlingServlet over deprecated @Properties approach"
+    },
+    {
+      "ruleId": "AEM-11",
+      "name": "Deprecated Admin Access",
+      "category": "Deprecated",
+      "description": "Do not use getAdministrativeResourceResolver or loginAdministrative"
+    },
+    {
+      "ruleId": "AEM-15",
+      "name": "Avoid Synchronized Keyword",
+      "category": "Best Practice",
+      "description": "Avoid synchronization when alternative solutions exist"
+    },
+    {
+      "ruleId": "AEM-16",
+      "name": "Redundant @Optional",
+      "category": "Code Smell",
+      "description": "Unnecessary when defaultInjectionStrategy is OPTIONAL"
+    },
+    {
+      "ruleId": "AEM-17",
+      "name": "ModifiableValueMap Usage",
+      "category": "Best Practice",
+      "description": "Replace with ValueMap if no mutation methods used"
+    },
+    {
+      "ruleId": "AEM-19",
+      "name": "Explicit Search Strategy",
+      "category": "Performance",
+      "description": "Define search strategy explicitly in Sling Query"
+    }
+  ],
+  "forbiddenIndexCustomizations": [
+    {
+      "indexName": "nodetypeLucene",
+      "description": "System index - customization prohibited"
+    },
+    {
+      "indexName": "slingResourceResolver",
+      "description": "System index - customization prohibited"
+    },
+    {
+      "indexName": "socialLucene",
+      "description": "System index - customization prohibited"
+    },
+    {
+      "indexName": "appsLibsLucene",
+      "description": "System index - customization prohibited"
+    },
+    {
+      "indexName": "authorizables",
+      "description": "System index - customization prohibited"
+    },
+    {
+      "indexName": "pathReference",
+      "description": "System index - customization prohibited"
+    }
+  ],
+  "legacyPaths": [
+    {
+      "path": "/etc/packages",
+      "migrationTarget": null,
+      "severity": "SEVERE",
+      "description": "Package installation via /etc/packages is forbidden - use Cloud Manager pipelines"
+    },
+    {
+      "path": "/etc/replication",
+      "migrationTarget": null,
+      "severity": "SEVERE",
+      "description": "Replication agents are managed by Cloud Service infrastructure"
+    },
+    {
+      "path": "/etc/map",
+      "migrationTarget": null,
+      "severity": "SEVERE",
+      "description": "Sling mappings in /etc/map are managed by Cloud Service - use CDN rewrites"
+    },
+    {
+      "path": "/var/classes",
+      "migrationTarget": null,
+      "severity": "SEVERE",
+      "description": "Compiled JSP classes are managed by Cloud Service runtime"
+    },
+    {
+      "path": "/var/clientlibs",
+      "migrationTarget": null,
+      "severity": "SEVERE",
+      "description": "Client library cache is managed by Cloud Service infrastructure"
+    },
+    {
+      "path": "/var/eventing",
+      "migrationTarget": null,
+      "severity": "SEVERE",
+      "description": "Eventing infrastructure is managed by Cloud Service"
+    },
+    {
+      "path": "/libs",
+      "migrationTarget": "/apps",
+      "severity": "SEVERE",
+      "description": "Modification of /libs is forbidden - use /apps overlays instead"
+    },
+    {
+      "path": "/etc/workflow/models",
+      "migrationTarget": "/var/workflow/models",
+      "severity": "MAJOR",
+      "description": "Workflow models must be in /var/workflow/models for Cloud Service"
+    },
+    {
+      "path": "/etc/workflow/scripts",
+      "migrationTarget": "/var/workflow/scripts",
+      "severity": "MAJOR",
+      "description": "Workflow scripts must be in /var/workflow/scripts for Cloud Service"
+    },
+    {
+      "path": "/etc/designs",
+      "migrationTarget": "/apps/<project>/clientlibs",
+      "severity": "MAJOR",
+      "description": "Design pages are deprecated - use clientlibs in /apps"
+    },
+    {
+      "path": "/etc/clientlibs",
+      "migrationTarget": "/apps/<project>/clientlibs",
+      "severity": "MAJOR",
+      "description": "Clientlibs should be under /apps"
+    },
+    {
+      "path": "/etc/blueprints",
+      "migrationTarget": "/apps/msm",
+      "severity": "MAJOR",
+      "description": "MSM blueprints must be in /apps/msm"
+    },
+    {
+      "path": "/etc/cloudservices",
+      "migrationTarget": "/conf/<project>/settings/cloudconfigs",
+      "severity": "MAJOR",
+      "description": "Cloud services must use context-aware configuration under /conf"
+    },
+    {
+      "path": "/etc/tags",
+      "migrationTarget": "/content/cq:tags",
+      "severity": "MAJOR",
+      "description": "Tags must be in /content/cq:tags"
+    },
+    {
+      "path": "/etc/dam/imageprofiles",
+      "migrationTarget": "/conf/<project>/settings/dam/processing",
+      "severity": "MAJOR",
+      "description": "Processing profiles must be under /conf"
+    },
+    {
+      "path": "/etc/dam/video",
+      "migrationTarget": "/conf/<project>/settings/dam/video",
+      "severity": "MAJOR",
+      "description": "Video profiles must be under /conf"
+    },
+    {
+      "path": "/etc/dam",
+      "migrationTarget": "/conf/<project>/settings/dam",
+      "severity": "MAJOR",
+      "description": "DAM configurations must be under /conf"
+    },
+    {
+      "path": "/etc/notification",
+      "migrationTarget": null,
+      "severity": "MAJOR",
+      "description": "Notification templates should use Cloud Manager environment variables"
+    },
+    {
+      "path": "/etc/segmentation",
+      "migrationTarget": "/conf/<project>/settings/wcm/segments",
+      "severity": "MAJOR",
+      "description": "Segmentation must be under /conf"
+    },
+    {
+      "path": "/etc/mobile",
+      "migrationTarget": null,
+      "severity": "MINOR",
+      "description": "Mobile device groups are deprecated in Cloud Service"
+    },
+    {
+      "path": "/etc/commerce",
+      "migrationTarget": "/var/commerce",
+      "severity": "MAJOR",
+      "description": "Commerce configurations must be in /var/commerce"
+    },
+    {
+      "path": "/etc/reports",
+      "migrationTarget": null,
+      "severity": "MINOR",
+      "description": "Report configurations are deprecated - use Cloud Manager analytics"
+    },
+    {
+      "path": "/etc/contentsync",
+      "migrationTarget": null,
+      "severity": "MAJOR",
+      "description": "Content sync configurations are not supported in Cloud Service"
+    },
+    {
+      "path": "/etc/tenants",
+      "migrationTarget": "/conf",
+      "severity": "MAJOR",
+      "description": "Tenant configurations must be under /conf"
+    },
+    {
+      "path": "/etc/truststore",
+      "migrationTarget": null,
+      "severity": "SEVERE",
+      "description": "Trust store is managed by Cloud Service infrastructure"
+    },
+    {
+      "path": "/etc/key",
+      "migrationTarget": null,
+      "severity": "SEVERE",
+      "description": "Encryption keys are managed by Cloud Service infrastructure"
+    },
+    {
+      "path": "/var/audit",
+      "migrationTarget": null,
+      "severity": "SEVERE",
+      "description": "Audit logs are managed by Cloud Service"
+    },
+    {
+      "path": "/var/sling/distribution",
+      "migrationTarget": null,
+      "severity": "SEVERE",
+      "description": "Content distribution is managed by Cloud Service"
+    },
+    {
+      "path": "/tmp",
+      "migrationTarget": null,
+      "severity": "SEVERE",
+      "description": "Temporary directory is ephemeral and cloud-managed"
+    },
+    {
+      "path": "/home/users/system",
+      "migrationTarget": null,
+      "severity": "MAJOR",
+      "description": "System users are managed by Cloud Service - use repo init for custom service users"
+    },
+    {
+      "path": "/home/groups",
+      "migrationTarget": null,
+      "severity": "MAJOR",
+      "description": "User groups should be managed via IMS or repo init"
+    }
+  ],
+  "deprecatedAnnotations": [
+    {
+      "annotation": "org.apache.felix.scr.annotations.Component",
+      "replacement": "org.osgi.service.component.annotations.Component",
+      "description": "Use OSGi R7 annotations instead of Felix SCR annotations"
+    },
+    {
+      "annotation": "org.apache.felix.scr.annotations.Service",
+      "replacement": "org.osgi.service.component.annotations.Component",
+      "description": "Use @Component with service attribute instead of @Service"
+    },
+    {
+      "annotation": "org.apache.felix.scr.annotations.Reference",
+      "replacement": "org.osgi.service.component.annotations.Reference",
+      "description": "Use OSGi R7 @Reference annotation"
+    },
+    {
+      "annotation": "org.apache.felix.scr.annotations.Property",
+      "replacement": "org.osgi.service.component.annotations.ComponentPropertyType",
+      "description": "Use type-safe component property types"
+    }
+  ],
+  "deprecatedOsgiPids": [
+    {
+      "pid": "com.day.cq.replication.impl.ReplicationAgentImpl",
+      "severity": "MAJOR",
+      "description": "Replication agents are managed by Cloud Service"
+    },
+    {
+      "pid": "com.day.cq.replication.impl.ReverseReplicationAgentImpl",
+      "severity": "MAJOR",
+      "description": "Reverse replication is not available in Cloud Service"
+    },
+    {
+      "pid": "com.day.cq.replication.impl.TransportHandler",
+      "severity": "MAJOR",
+      "description": "Custom transport handlers are not supported in Cloud Service"
+    },
+    {
+      "pid": "org.apache.sling.jcr.davex.impl.servlets.SlingDavExServlet",
+      "severity": "MAJOR",
+      "description": "WebDAV access is disabled in Cloud Service"
+    },
+    {
+      "pid": "org.apache.sling.jcr.webdav.impl.servlets.SimpleWebDavServlet",
+      "severity": "MAJOR",
+      "description": "WebDAV access is disabled in Cloud Service"
+    },
+    {
+      "pid": "com.adobe.granite.auth.oauth.impl.TwitterProviderImpl",
+      "severity": "MAJOR",
+      "description": "Social login providers are deprecated"
+    },
+    {
+      "pid": "com.adobe.granite.auth.oauth.impl.FacebookProviderImpl",
+      "severity": "MAJOR",
+      "description": "Social login providers are deprecated"
+    },
+    {
+      "pid": "com.day.cq.dam.core.impl.servlet.AssetDownloadServlet",
+      "severity": "MINOR",
+      "description": "Use Dynamic Media or CDN for asset delivery"
+    },
+    {
+      "pid": "com.day.cq.dam.core.impl.DamEventRecorder",
+      "severity": "MINOR",
+      "description": "DAM event recording configuration is cloud-managed"
+    },
+    {
+      "pid": "com.day.cq.wcm.msm.impl.LiveRelationshipManagerImpl",
+      "severity": "MINOR",
+      "description": "MSM configuration should use context-aware config"
+    },
+    {
+      "pid": "org.apache.sling.commons.log.LogManager.factory.config",
+      "severity": "MINOR",
+      "description": "Logging is managed via Cloud Manager - use environment-specific configs"
+    },
+    {
+      "pid": "com.day.cq.mailer.DefaultMailService",
+      "severity": "MAJOR",
+      "description": "Email service must use Cloud Manager environment variables for SMTP"
+    }
+  ],
+  "cloudManagedOsgiPids": [
+    {
+      "pid": "org.apache.sling.jcr.base.internal.LoginAdminWhitelist",
+      "description": "Admin login whitelist is managed by Cloud Service"
+    },
+    {
+      "pid": "org.apache.sling.jcr.repoinit.RepositoryInitializer",
+      "description": "Repo init is managed via Cloud Manager"
+    },
+    {
+      "pid": "org.apache.sling.serviceusermapping.impl.ServiceUserMapperImpl",
+      "description": "Service user mappings are managed by Cloud Service - use .amended configs"
+    },
+    {
+      "pid": "org.apache.sling.engine.impl.SlingMainServlet",
+      "description": "Sling main servlet configuration is cloud-managed"
+    },
+    {
+      "pid": "org.apache.felix.http.jetty",
+      "description": "Jetty HTTP configuration is cloud-managed"
+    },
+    {
+      "pid": "org.apache.sling.commons.threads.impl.DefaultThreadPoolManager",
+      "description": "Thread pool configuration is cloud-managed"
+    },
+    {
+      "pid": "com.adobe.granite.repository.impl.CommitStatsConfig",
+      "description": "Repository commit stats are cloud-managed"
+    },
+    {
+      "pid": "org.apache.jackrabbit.oak.segment.SegmentNodeStoreService",
+      "description": "Oak segment store configuration is cloud-managed"
+    },
+    {
+      "pid": "org.apache.jackrabbit.oak.plugins.blob.datastore.DataStoreTextProviderService",
+      "description": "Blob datastore configuration is cloud-managed"
+    }
+  ],
+  "runModeRestrictions": [
+    {
+      "runMode": "author",
+      "description": "Author-specific configuration - allowed"
+    },
+    {
+      "runMode": "publish",
+      "description": "Publish-specific configuration - allowed"
+    },
+    {
+      "runMode": "dev",
+      "description": "Development environment - allowed via Cloud Manager"
+    },
+    {
+      "runMode": "stage",
+      "description": "Staging environment - allowed via Cloud Manager"
+    },
+    {
+      "runMode": "prod",
+      "description": "Production environment - allowed via Cloud Manager"
+    },
+    {
+      "runMode": "nosamplecontent",
+      "description": "Forbidden in Cloud Service - no sample content by default",
+      "forbidden": true
+    },
+    {
+      "runMode": "crx3",
+      "description": "Forbidden - CRX3 specific run modes not available",
+      "forbidden": true
+    },
+    {
+      "runMode": "crx3tar",
+      "description": "Forbidden - CRX3 TAR specific run modes not available",
+      "forbidden": true
+    },
+    {
+      "runMode": "crx3mongo",
+      "description": "Forbidden - CRX3 MongoDB specific run modes not available",
+      "forbidden": true
+    }
+  ],
+  "contentPatterns": [
+    {
+      "pattern": "jcr:data",
+      "maxSizeMB": 100,
+      "severity": "MAJOR",
+      "description": "Binary content over 100MB should use external blob storage"
+    },
+    {
+      "pattern": "dam:Asset",
+      "recommendation": "Use Asset Compute for rendition processing",
+      "severity": "INFO"
+    }
+  ],
+  "securityPatterns": [
+    {
+      "pattern": "rep:policy",
+      "severity": "INFO",
+      "description": "ACL definition - review for least-privilege principle"
+    },
+    {
+      "antiPattern": "allow jcr:all",
+      "severity": "MAJOR",
+      "description": "Overly permissive ACL - avoid granting jcr:all permissions"
+    },
+    {
+      "antiPattern": "user admin",
+      "severity": "SEVERE",
+      "description": "Admin user reference - use dedicated service users instead"
+    }
+  ]
+}

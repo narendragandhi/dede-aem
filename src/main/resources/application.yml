@@ -1,0 +1,137 @@
+# Dede-Java Application Configuration
+# =====================================
+
+spring:
+  application:
+    name: dede-java
+
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:dev}
+
+# Server Configuration
+server:
+  port: ${SERVER_PORT:8080}
+  servlet:
+    context-path: /
+  error:
+    include-message: always
+    include-binding-errors: always
+
+# Actuator Configuration (Health, Metrics, Info)
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+      base-path: /actuator
+  endpoint:
+    health:
+      show-details: when_authorized
+      probes:
+        enabled: true
+  info:
+    env:
+      enabled: true
+  health:
+    livenessState:
+      enabled: true
+    readinessState:
+      enabled: true
+
+# Application Info
+info:
+  app:
+    name: Dede-Java
+    description: Architectural Intelligence Engine for AEM, Sling, and OSGi ecosystems
+    version: 1.1.0
+  java:
+    version: ${java.version}
+
+# Logging Configuration
+logging:
+  level:
+    root: INFO
+    com.dede: INFO
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n"
+    file: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n"
+
+# OpenAPI/Swagger Configuration
+springdoc:
+  api-docs:
+    path: /api-docs
+    enabled: true
+  swagger-ui:
+    path: /swagger-ui.html
+    enabled: true
+    operations-sorter: method
+    tags-sorter: alpha
+  show-actuator: true
+
+# Dede-specific Configuration
+dede:
+  profiles:
+    default: aem
+    directory: ${DEDE_PROFILES_DIR:profiles}
+  scan:
+    timeout-seconds: ${DEDE_SCAN_TIMEOUT:300}
+    max-file-size-mb: ${DEDE_MAX_FILE_SIZE:10}
+  ai:
+    enabled: ${DEDE_AI_ENABLED:true}
+
+---
+# Development Profile
+spring:
+  config:
+    activate:
+      on-profile: dev
+
+logging:
+  level:
+    com.dede: DEBUG
+
+management:
+  endpoint:
+    health:
+      show-details: always
+
+---
+# Production Profile
+spring:
+  config:
+    activate:
+      on-profile: prod
+
+logging:
+  level:
+    root: WARN
+    com.dede: INFO
+  file:
+    name: ${LOG_PATH:/var/log/dede}/dede-java.log
+    max-size: 100MB
+    max-history: 30
+
+management:
+  endpoint:
+    health:
+      show-details: when_authorized
+
+server:
+  error:
+    include-message: never
+    include-stacktrace: never
+
+---
+# Test Profile
+spring:
+  config:
+    activate:
+      on-profile: test
+
+logging:
+  level:
+    com.dede: DEBUG
+
+dede:
+  ai:
+    enabled: false

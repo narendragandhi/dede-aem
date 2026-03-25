@@ -23,5 +23,15 @@ public enum NodeType {
     JCR_PAGE,
     JCR_COMPONENT,
     DISPATCHER_FILTER,
-    CDN_RULE
+    CDN_RULE,
+    CONTENT_PACKAGE,
+    PACKAGE_VIOLATION,
+
+    // Sling Request Processing types
+    SLING_SERVLET,
+    SLING_FILTER,
+    SLING_SELECTOR,
+    SLING_EXTENSION,
+    SLING_PATH,
+    SLING_FILTER_SCOPE
 }

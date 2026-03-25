@@ -2,10 +2,13 @@ package com.dede;
 
 import com.dede.discovery.ProjectScanner;
 import com.dede.discovery.SourceParser;
+import com.dede.discovery.OsgiLinker;
 import com.dede.domain.GraphService;
 import com.dede.knowledge.GovernanceEngine;
 import com.dede.intelligence.VulnerabilityService;
 import com.dede.intelligence.GraphAgentSkills;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
@@ -17,14 +20,18 @@ import java.util.List;
 @SpringBootApplication
 public class DedeApplication {
 
+    private static final Logger log = LoggerFactory.getLogger(DedeApplication.class);
+    private static final String VERSION = "1.1.0";
+
     public static void main(String[] args) {
         SpringApplication.run(DedeApplication.class, args);
     }
 
     @Bean
-    public CommandLineRunner commandLineRunner(ProjectScanner scanner, SourceParser sourceParser, 
+    public CommandLineRunner commandLineRunner(ProjectScanner scanner, SourceParser sourceParser,
                                              GraphService graphService, GovernanceEngine governance,
-                                             VulnerabilityService security, GraphAgentSkills agent) {
+                                             VulnerabilityService security, GraphAgentSkills agent,
+                                             OsgiLinker osgiLinker) {
         return args -> {
             if (args.length == 0 || "--help".equals(args[0]) || "-h".equals(args[0])) {
                 printHelp();
@@ -57,13 +64,20 @@ public class DedeApplication {
             }
 
             printBanner();
+            log.info("Starting scan of project: {}", projectPath);
+            log.info("Using profiles: {}", profiles);
 
             sourceParser.loadProfiles(profiles.split(","));
             scanner.scan(projectPath);
 
+            // Link phase: connect bundles via imports/exports, link configs to services
+            log.info("Running OSGi linker to connect bundles and configurations...");
+            osgiLinker.link();
+
             if (analyzeNodeId != null) {
-                System.out.println("\n🔍 Human Insight: Impact Analysis for '" + analyzeNodeId + "'");
-                System.out.println(agent.analyzeImpact(analyzeNodeId));
+                log.info("Performing impact analysis for node: {}", analyzeNodeId);
+                String analysis = agent.analyzeImpact(analyzeNodeId);
+                log.info("Impact Analysis for '{}': {}", analyzeNodeId, analysis);
             }
 
             if (rulesPath != null) {
@@ -76,13 +90,11 @@ public class DedeApplication {
             }
 
             if (dotOutputPath != null) {
-                System.out.println("📝 Exporting graph to DOT: " + dotOutputPath);
+                log.info("Exporting graph to DOT: {}", dotOutputPath);
                 graphService.exportToDot(new File(dotOutputPath));
             }
 
-            System.out.println("\n📊 Scan Summary:");
-            System.out.println("   - Total Nodes: " + graphService.getNodeCount());
-            System.out.println("   - Total Edges: " + graphService.getEdgeCount());
+            log.info("Scan Summary: {} nodes, {} edges", graphService.getNodeCount(), graphService.getEdgeCount());
 
             if (rulesPath != null) {
                 governance.printViolations();
@@ -93,28 +105,30 @@ public class DedeApplication {
             }
 
             // AI Insights
-            System.out.println("\n🤖 AI Refactoring Suggestions:");
             List<String> suggestions = agent.suggestRefactoring();
             if (suggestions.isEmpty()) {
-                System.out.println("   Architecture looks solid!");
+                log.info("AI Refactoring Suggestions: Architecture looks solid!");
             } else {
-                suggestions.forEach(s -> System.out.println("   💡 " + s));
+                log.info("AI Refactoring Suggestions:");
+                suggestions.forEach(s -> log.info("  - {}", s));
             }
         };
     }
 
     private void printBanner() {
-        System.out.println("🚀 Dede-Java Architectural Intelligence Engine v1.1.0");
-        System.out.println("Inspired by Mitko Kolev's 'dede' (https://github.com/mitkox/dede)");
-        System.out.println("--------------------------------------------------");
+        log.info("=================================================");
+        log.info("Dede-Java Architectural Intelligence Engine v{}", VERSION);
+        log.info("Inspired by Mitko Kolev's 'dede'");
+        log.info("=================================================");
     }
 
     private void printHelp() {
-        System.out.println("Usage: dede <project-path> [options]");
-        System.out.println("Options:");
-        System.out.println("  --profiles <p1,p2>  Comma-separated profiles (default: aem)");
-        System.out.println("  --rules <path>      Path to dede-rules.json");
-        System.out.println("  --security          Enable security reachability audit");
-        System.out.println("  --dot <path.dot>    Export visual graph to DOT format");
+        log.info("Usage: dede <project-path> [options]");
+        log.info("Options:");
+        log.info("  --profiles <p1,p2>  Comma-separated profiles (default: aem)");
+        log.info("  --rules <path>      Path to dede-rules.json");
+        log.info("  --security          Enable security reachability audit");
+        log.info("  --dot <path.dot>    Export visual graph to DOT format");
+        log.info("  --analyze <nodeId>  Perform impact analysis for a node");
     }
 }

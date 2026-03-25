@@ -4,7 +4,8 @@ public enum RelationshipType {
     CONTAINS,   // Project -> Package -> Class
     DECLARES,   // Class -> Method
     CALLS,      // Method -> Method
-    INHERITS,   // Class -> Class
+    INHERITS,   // Class -> Class (legacy, use EXTENDS)
+    EXTENDS,    // Class -> Superclass
     IMPLEMENTS, // Class -> Interface
     USES,        // Method -> Field
     EXPORTS,     // Bundle -> Package
@@ -23,5 +24,18 @@ public enum RelationshipType {
     INSTANTIATED_BY, // JCR Node -> JCR Resource Type
     DEFINES,       // ui.apps folder -> JCR Resource Type
     DYNAMIC_CONSUMES, // Code -> OSGi Service (via BundleContext)
-    DYNAMIC_ADAPTS_TO // Code -> Model (via adaptTo)
+    DYNAMIC_ADAPTS_TO, // Code -> Model (via adaptTo)
+    PACKAGES,          // Content Package -> JCR Path
+    VIOLATES,          // Package Violation -> Content Package
+
+    // Sling Request Processing relationships
+    HANDLES_RESOURCE_TYPE, // Servlet -> Resource Type it handles
+    HANDLES_PATH,          // Servlet -> Path it handles
+    HANDLES_EXTENSION,     // Servlet -> Extension it handles
+    HANDLES_SELECTOR,      // Servlet -> Selector it handles
+    FILTERS_SCOPE,         // Filter -> Scope (REQUEST/COMPONENT/ERROR)
+    INJECTS_CHILD,         // Model -> Child resource injection
+    INJECTS_VALUE,         // Model -> ValueMap injection
+    INJECTS_REQUEST,       // Model -> Request attribute injection
+    EXTENDS_RESOURCE_TYPE  // Resource Type -> Super Resource Type
 }

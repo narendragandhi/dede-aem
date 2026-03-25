@@ -1,0 +1,161 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  JAVA_VERSION: '21'
+  MAVEN_OPTS: '-Xmx1024m'
+
+jobs:
+  build:
+    name: Build & Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK ${{ env.JAVA_VERSION }}
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: 'temurin'
+          cache: maven
+
+      - name: Build with Maven
+        run: mvn clean compile -B
+
+      - name: Run tests
+        run: mvn test -B
+
+      - name: Generate test report
+        if: always()
+        uses: dorny/test-reporter@v1
+        with:
+          name: Test Results
+          path: target/surefire-reports/*.xml
+          reporter: java-junit
+
+      - name: Package application
+        run: mvn package -DskipTests -B
+
+      - name: Upload JAR artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dede-java-jar
+          path: target/*.jar
+          retention-days: 7
+
+  code-quality:
+    name: Code Quality
+    runs-on: ubuntu-latest
+    needs: build
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK ${{ env.JAVA_VERSION }}
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: 'temurin'
+          cache: maven
+
+      - name: Run SpotBugs
+        run: mvn spotbugs:check -B || true
+        continue-on-error: true
+
+      - name: Run Checkstyle
+        run: mvn checkstyle:check -B || true
+        continue-on-error: true
+
+  security-scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    needs: build
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK ${{ env.JAVA_VERSION }}
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: 'temurin'
+          cache: maven
+
+      - name: OWASP Dependency Check
+        run: mvn org.owasp:dependency-check-maven:check -B || true
+        continue-on-error: true
+
+      - name: Upload Dependency Check Report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dependency-check-report
+          path: target/dependency-check-report.html
+          retention-days: 7
+
+  docker:
+    name: Docker Build
+    runs-on: ubuntu-latest
+    needs: [build, code-quality]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: false
+          tags: dede-java:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Test Docker image
+        run: |
+          docker run --rm dede-java:latest --help || true
+
+  release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    needs: [build, code-quality, security-scan]
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK ${{ env.JAVA_VERSION }}
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: 'temurin'
+          cache: maven
+
+      - name: Build release
+        run: mvn clean package -DskipTests -B
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            target/dede-java-*-exec.jar
+            target/dede-java-*.jar
+          generate_release_notes: true

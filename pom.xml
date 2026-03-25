@@ -19,12 +19,32 @@
         <java.version>21</java.version>
         <javaparser.version>3.25.7</javaparser.version>
         <jgrapht.version>1.5.2</jgrapht.version>
+        <oakpal.version>2.3.0</oakpal.version>
     </properties>
 
     <dependencies>
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+
+        <!-- Spring Boot Actuator for health checks and monitoring -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+
+        <!-- OpenAPI/Swagger Documentation -->
+        <dependency>
+            <groupId>org.springdoc</groupId>
+            <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+            <version>2.3.0</version>
+        </dependency>
+
+        <!-- Validation -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-validation</artifactId>
         </dependency>
         
         <!-- OSGi Dependencies -->
@@ -77,6 +97,24 @@
             <groupId>org.projectlombok</groupId>
             <artifactId>lombok</artifactId>
             <optional>true</optional>
+        </dependency>
+
+        <!-- Micrometer for metrics -->
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-registry-prometheus</artifactId>
+        </dependency>
+
+        <!-- OakPal for content package validation -->
+        <dependency>
+            <groupId>net.adamcin.oakpal</groupId>
+            <artifactId>oakpal-core</artifactId>
+            <version>${oakpal.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>net.adamcin.oakpal</groupId>
+            <artifactId>oakpal-api</artifactId>
+            <version>${oakpal.version}</version>
         </dependency>
     </dependencies>
 

@@ -116,6 +116,12 @@
             <artifactId>oakpal-api</artifactId>
             <version>${oakpal.version}</version>
         </dependency>
+
+        <!-- GraphQL for powerful querying -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-graphql</artifactId>
+        </dependency>
     </dependencies>
 
     <build>

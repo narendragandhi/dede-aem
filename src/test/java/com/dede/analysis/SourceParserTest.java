@@ -42,8 +42,8 @@ class SourceParserTest {
         // Act
         parser.parse(sourceFile);
 
-        // Assert
-        assertThat(graphService.getNodeCount()).isEqualTo(3); // Pkg + Class + Method
+        // Assert - 4 nodes: Pkg + Class + Method + called method (println from CALLS tracking)
+        assertThat(graphService.getNodeCount()).isEqualTo(4);
         
         // Verify Package
         CodeNode pkgNode = graphService.findNodeById("pkg:com.example").orElseThrow();

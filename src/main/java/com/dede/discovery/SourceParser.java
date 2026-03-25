@@ -311,6 +311,30 @@ public class SourceParser implements ProjectParser {
         CodeNode methodNode = new CodeNode("method:" + fullSignature, methodName, NodeType.METHOD, fullSignature, filePath);
         graphService.addNode(methodNode);
         graphService.addEdge(parentClass, methodNode, RelationshipType.DECLARES);
+
+        // Track method invocations (CALLS edges)
+        method.findAll(MethodCallExpr.class).forEach(call -> {
+            String calledMethod = call.getNameAsString();
+
+            // Try to determine the target class from scope
+            String targetClass = call.getScope()
+                .map(scope -> {
+                    // Handle common patterns: this.method(), instance.method(), ClassName.staticMethod()
+                    String scopeStr = scope.toString();
+                    if (scopeStr.equals("this") || scopeStr.equals("super")) {
+                        return parentClass.getSignature();
+                    }
+                    // For qualified calls like service.doSomething(), use the scope as hint
+                    return scopeStr;
+                })
+                .orElse(parentClass.getSignature()); // Local method call within same class
+
+            String calledSignature = targetClass + "." + calledMethod + "()";
+            CodeNode calledNode = new CodeNode("method:" + calledSignature, calledMethod,
+                NodeType.METHOD, calledSignature, null);
+            graphService.addNode(calledNode);
+            graphService.addEdge(methodNode, calledNode, RelationshipType.CALLS);
+        });
     }
 
     private Optional<String> getAttribute(AnnotationExpr a, String attrName) {

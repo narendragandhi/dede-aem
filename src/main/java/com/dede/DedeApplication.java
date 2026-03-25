@@ -3,6 +3,7 @@ package com.dede;
 import com.dede.discovery.ProjectScanner;
 import com.dede.discovery.SourceParser;
 import com.dede.discovery.OsgiLinker;
+import com.dede.domain.DeltaAnalyzer;
 import com.dede.domain.GraphService;
 import com.dede.knowledge.GovernanceEngine;
 import com.dede.intelligence.VulnerabilityService;
@@ -15,13 +16,14 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.annotation.Bean;
 
 import java.io.File;
+import java.nio.file.Path;
 import java.util.List;
 
 @SpringBootApplication
 public class DedeApplication {
 
     private static final Logger log = LoggerFactory.getLogger(DedeApplication.class);
-    private static final String VERSION = "1.1.0";
+    private static final String VERSION = "2.0.0";
 
     public static void main(String[] args) {
         SpringApplication.run(DedeApplication.class, args);
@@ -31,7 +33,7 @@ public class DedeApplication {
     public CommandLineRunner commandLineRunner(ProjectScanner scanner, SourceParser sourceParser,
                                              GraphService graphService, GovernanceEngine governance,
                                              VulnerabilityService security, GraphAgentSkills agent,
-                                             OsgiLinker osgiLinker) {
+                                             OsgiLinker osgiLinker, DeltaAnalyzer deltaAnalyzer) {
         return args -> {
             if (args.length == 0 || "--help".equals(args[0]) || "-h".equals(args[0])) {
                 printHelp();
@@ -44,6 +46,8 @@ public class DedeApplication {
             String analyzeNodeId = null;
             boolean checkSecurity = false;
             String profiles = "aem"; // Default
+            String snapshotPath = null;
+            String compareSnapshot = null;
 
             for (int i = 0; i < args.length; i++) {
                 if ("--rules".equals(args[i]) && i + 1 < args.length) {
@@ -60,6 +64,12 @@ public class DedeApplication {
                 }
                 if ("--profiles".equals(args[i]) && i + 1 < args.length) {
                     profiles = args[i + 1];
+                }
+                if ("--snapshot".equals(args[i]) && i + 1 < args.length) {
+                    snapshotPath = args[i + 1];
+                }
+                if ("--compare".equals(args[i]) && i + 1 < args.length) {
+                    compareSnapshot = args[i + 1];
                 }
             }
 
@@ -104,6 +114,19 @@ public class DedeApplication {
                 security.printReport();
             }
 
+            // Delta Analysis
+            if (snapshotPath != null) {
+                log.info("Saving snapshot to: {}", snapshotPath);
+                String savedPath = deltaAnalyzer.saveSnapshot(Path.of(snapshotPath));
+                log.info("Snapshot saved: {}", savedPath);
+            }
+
+            if (compareSnapshot != null) {
+                log.info("Comparing with snapshot: {}", compareSnapshot);
+                var deltaReport = deltaAnalyzer.compareWithSnapshot(Path.of(compareSnapshot));
+                log.info("\n{}", deltaAnalyzer.generateTextReport(deltaReport));
+            }
+
             // AI Insights
             List<String> suggestions = agent.suggestRefactoring();
             if (suggestions.isEmpty()) {
@@ -116,10 +139,18 @@ public class DedeApplication {
     }
 
     private void printBanner() {
-        log.info("=================================================");
-        log.info("Dede-Java Architectural Intelligence Engine v{}", VERSION);
-        log.info("Inspired by Mitko Kolev's 'dede'");
-        log.info("=================================================");
+        log.info("");
+        log.info("  ____           _            _                  ");
+        log.info(" |  _ \\  ___  __| | ___      | | __ ___   ____ _ ");
+        log.info(" | | | |/ _ \\/ _` |/ _ \\ ___ | |/ _` \\ \\ / / _` |");
+        log.info(" | |_| |  __/ (_| |  __/|___|| | (_| |\\ V / (_| |");
+        log.info(" |____/ \\___|\\__,_|\\___|     |_|\\__,_| \\_/ \\__,_|");
+        log.info("");
+        log.info("  Architectural Intelligence Engine v{}", VERSION);
+        log.info("  Inspired by Mitko Kolev's 'dede'");
+        log.info("");
+        log.info("  Features: CALLS graph | GraphQL | D3.js UI | Delta Analysis");
+        log.info("  =============================================================");
     }
 
     private void printHelp() {
@@ -130,5 +161,12 @@ public class DedeApplication {
         log.info("  --security          Enable security reachability audit");
         log.info("  --dot <path.dot>    Export visual graph to DOT format");
         log.info("  --analyze <nodeId>  Perform impact analysis for a node");
+        log.info("  --snapshot <dir>    Save graph snapshot to directory");
+        log.info("  --compare <file>    Compare with previous snapshot");
+        log.info("");
+        log.info("Web UI:      http://localhost:8080/");
+        log.info("GraphQL:     http://localhost:8080/graphql");
+        log.info("GraphiQL:    http://localhost:8080/graphiql");
+        log.info("Swagger UI:  http://localhost:8080/swagger-ui.html");
     }
 }

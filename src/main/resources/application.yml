@@ -68,6 +68,16 @@ springdoc:
     tags-sorter: alpha
   show-actuator: true
 
+# GraphQL Configuration
+spring.graphql:
+  graphiql:
+    enabled: true
+    path: /graphiql
+  path: /graphql
+  schema:
+    printer:
+      enabled: true
+
 # Dede-specific Configuration
 dede:
   profiles:

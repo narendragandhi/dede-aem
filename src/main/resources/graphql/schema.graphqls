@@ -1,0 +1,183 @@
+# Dede-Java GraphQL Schema
+# Powerful queries for architectural dependency analysis
+
+type Query {
+    # Get a specific node by ID
+    node(id: ID!): CodeNode
+    
+    # Search nodes by name pattern
+    searchNodes(name: String!, types: [NodeType], limit: Int = 100): [CodeNode!]!
+    
+    # Get all nodes of a specific type
+    nodesByType(type: NodeType!, limit: Int = 100): [CodeNode!]!
+    
+    # Get nodes connected to a specific node
+    connectedNodes(nodeId: ID!, direction: Direction = BOTH, relationshipTypes: [RelationshipType]): [Connection!]!
+    
+    # Find path between two nodes
+    findPath(fromId: ID!, toId: ID!, maxDepth: Int = 10): [PathStep!]
+    
+    # Get dependency tree (downstream dependents)
+    dependencyTree(nodeId: ID!, maxDepth: Int = 3): DependencyNode
+    
+    # Get impact analysis - what would be affected if this node changes
+    impactAnalysis(nodeId: ID!, maxDepth: Int = 3): ImpactReport!
+    
+    # Graph statistics
+    stats: GraphStats!
+    
+    # Find cycles in the graph
+    findCycles(maxLength: Int = 5): [[CodeNode!]!]!
+    
+    # Get all services consumed by a class/component
+    serviceConsumption(nodeId: ID!): ServiceReport!
+    
+    # Find components using a specific resource type
+    resourceTypeUsage(resourceType: String!): ResourceTypeReport!
+}
+
+# A code element in the dependency graph
+type CodeNode {
+    id: ID!
+    name: String!
+    type: NodeType!
+    signature: String
+    filePath: String
+    properties: [Property!]!
+    
+    # Relationships
+    outgoing(types: [RelationshipType]): [Connection!]!
+    incoming(types: [RelationshipType]): [Connection!]!
+    
+    # Computed fields
+    inDegree: Int!
+    outDegree: Int!
+}
+
+# A property key-value pair
+type Property {
+    key: String!
+    value: String!
+}
+
+# A connection/edge between nodes
+type Connection {
+    source: CodeNode!
+    target: CodeNode!
+    type: RelationshipType!
+    confidence: Int
+}
+
+# A step in a path
+type PathStep {
+    node: CodeNode!
+    edge: RelationshipType
+}
+
+# Recursive dependency tree node
+type DependencyNode {
+    node: CodeNode!
+    dependents: [DependencyNode!]!
+    depth: Int!
+}
+
+# Impact analysis report
+type ImpactReport {
+    node: CodeNode!
+    directImpact: [CodeNode!]!
+    transitiveImpact: [CodeNode!]!
+    impactedServices: [CodeNode!]!
+    impactedHTL: [CodeNode!]!
+    riskLevel: RiskLevel!
+    summary: String!
+}
+
+# Service consumption report
+type ServiceReport {
+    node: CodeNode!
+    consumedServices: [CodeNode!]!
+    providedServices: [CodeNode!]!
+    dynamicDependencies: [CodeNode!]!
+}
+
+# Resource type usage report
+type ResourceTypeReport {
+    resourceType: String!
+    models: [CodeNode!]!
+    servlets: [CodeNode!]!
+    htlFiles: [CodeNode!]!
+}
+
+# Graph statistics
+type GraphStats {
+    nodeCount: Int!
+    edgeCount: Int!
+    nodesByType: [TypeCount!]!
+    edgesByType: [TypeCount!]!
+    mostConnected: [CodeNode!]!
+}
+
+# Count by type
+type TypeCount {
+    type: String!
+    count: Int!
+}
+
+# Risk level for impact analysis
+enum RiskLevel {
+    LOW
+    MEDIUM
+    HIGH
+    CRITICAL
+}
+
+# Direction for edge traversal
+enum Direction {
+    INCOMING
+    OUTGOING
+    BOTH
+}
+
+# Node types
+enum NodeType {
+    PROJECT
+    PACKAGE
+    CLASS
+    INTERFACE
+    METHOD
+    FIELD
+    BUNDLE
+    OSGI_SERVICE
+    OSGI_COMPONENT
+    OSGI_CONFIG
+    JCR_RESOURCE_TYPE
+    SLING_MODEL
+    HTL_FILE
+    CLIENTLIB
+    SLING_SERVLET
+    SLING_FILTER
+}
+
+# Relationship types
+enum RelationshipType {
+    CONTAINS
+    DECLARES
+    CALLS
+    EXTENDS
+    IMPLEMENTS
+    USES
+    EXPORTS
+    IMPORTS
+    PROVIDES
+    CONSUMES
+    WIRES_TO
+    ADAPTS_TO
+    REFERENCES
+    DEPENDS_ON
+    DEFINES
+    DYNAMIC_ADAPTS_TO
+    DYNAMIC_CONSUMES
+    INSTANTIATED_BY
+    HANDLES_RESOURCE_TYPE
+    HANDLES_PATH
+}

@@ -50,7 +50,14 @@ public class JcrContentParser implements ProjectParser {
             Node root = doc.getDocumentElement();
 
             NamedNodeMap attrs = root.getAttributes();
+            Node primaryTypeAttr = attrs.getNamedItem("jcr:primaryType");
             Node resourceTypeAttr = attrs.getNamedItem("sling:resourceType");
+            Node resourceSuperTypeAttr = attrs.getNamedItem("sling:resourceSuperType");
+
+            // Detect if this is a cq:Component definition (proxy component)
+            boolean isComponentDefinition = primaryTypeAttr != null &&
+                "cq:Component".equals(primaryTypeAttr.getNodeValue());
+
             if (resourceTypeAttr != null) {
                 String resourceType = resourceTypeAttr.getNodeValue();
                 CodeNode resTypeNode = new CodeNode("resType:" + resourceType, resourceType, NodeType.JCR_RESOURCE_TYPE, resourceType, null);
@@ -59,7 +66,7 @@ public class JcrContentParser implements ProjectParser {
                 // Create a node for this specific content instance
                 String contentPath = xmlPath.toString();
                 CodeNode contentNode = new CodeNode("jcr:" + contentPath, contentPath, NodeType.JCR_COMPONENT, contentPath, contentPath);
-                
+
                 // SECRET SANITIZATION: Do not store sensitive properties
                 for (int i = 0; i < attrs.getLength(); i++) {
                     Node attr = attrs.item(i);
@@ -73,6 +80,40 @@ public class JcrContentParser implements ProjectParser {
 
                 graphService.addNode(contentNode);
                 graphService.addEdge(contentNode, resTypeNode, RelationshipType.INSTANTIATED_BY);
+            }
+
+            // Handle proxy components that use sling:resourceSuperType
+            if (isComponentDefinition && resourceSuperTypeAttr != null) {
+                String superType = resourceSuperTypeAttr.getNodeValue();
+
+                // Extract this component's resource type from path
+                String pathStr = xmlPath.toString().replace("\\", "/");
+                int appsIdx = pathStr.indexOf("/apps/");
+                if (appsIdx == -1) {
+                    appsIdx = pathStr.indexOf("jcr_root/apps/");
+                    if (appsIdx != -1) appsIdx += 9;
+                }
+
+                if (appsIdx != -1) {
+                    String afterApps = pathStr.substring(appsIdx + 6);
+                    // Remove /.content.xml suffix
+                    if (afterApps.endsWith("/.content.xml")) {
+                        afterApps = afterApps.substring(0, afterApps.length() - 13);
+                    }
+
+                    // Create node for this component with proxy flag
+                    CodeNode componentNode = new CodeNode("res:" + afterApps, afterApps,
+                        NodeType.JCR_RESOURCE_TYPE, "Proxy to: " + superType, pathStr);
+                    componentNode.getProperties().put("isProxy", "true");
+                    componentNode.getProperties().put("sling:resourceSuperType", superType);
+                    graphService.addNode(componentNode);
+
+                    // Create relationship to super type
+                    CodeNode superTypeNode = new CodeNode("res:" + superType, superType,
+                        NodeType.JCR_RESOURCE_TYPE, superType, null);
+                    graphService.addNode(superTypeNode);
+                    graphService.addEdge(componentNode, superTypeNode, RelationshipType.EXTENDS);
+                }
             }
         } catch (Exception e) {
             // Silently ignore malformed XML in non-JCR files

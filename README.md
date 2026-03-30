@@ -4,7 +4,7 @@ A static analysis tool for validating AEM codebase compatibility with AEM as a C
 
 [![Java Version](https://img.shields.io/badge/Java-21-blue)](https://openjdk.org/projects/jdk/21/)
 [![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.2.0-green)](https://spring.io/projects/spring-boot)
-[![Tests](https://img.shields.io/badge/Tests-61%20passing-brightgreen)]()
+[![Tests](https://img.shields.io/badge/Tests-116%20passing-brightgreen)]()
 
 ---
 
@@ -257,10 +257,54 @@ java -jar dede.jar /project --profiles aem,myprofile
 
 ---
 
+## AEM OSGi Bundle
+
+Dede can also be deployed as an OSGi bundle directly in AEM for live JCR analysis.
+
+### Installation
+
+```bash
+# Build the AEM bundle
+cd dede-aem-bundle
+mvn clean install
+
+# Deploy to local AEM
+mvn clean install -PautoInstallBundle
+```
+
+### AEM Bundle Features
+
+| Feature | Standalone | AEM Bundle |
+|---------|------------|------------|
+| Source code analysis | ✅ | ❌ |
+| Live JCR scanning | ❌ | ✅ |
+| Dispatcher analysis | ✅ | ❌ |
+| GraphQL API | ✅ | ❌ |
+| Web UI | ✅ | ❌ |
+| Real-time scanning | ❌ | ✅ |
+
+### AEM REST API
+
+```bash
+# Scan /apps/wknd
+curl -X POST -u admin:admin \
+  "http://localhost:4502/bin/dede/graph/scan?path=/apps/wknd"
+
+# Get cycles
+curl -u admin:admin "http://localhost:4502/bin/dede/graph/cycles"
+
+# Get suggestions
+curl -u admin:admin "http://localhost:4502/bin/dede/graph/suggestions"
+```
+
+See [dede-aem-bundle/README.md](dede-aem-bundle/README.md) for full documentation.
+
+---
+
 ## Development
 
 ```bash
-# Run tests
+# Run tests (116 tests)
 mvn test
 
 # Run with coverage
@@ -268,6 +312,9 @@ mvn test jacoco:report
 
 # Build executable JAR
 mvn clean package -DskipTests
+
+# Build AEM bundle
+cd dede-aem-bundle && mvn clean package
 ```
 
 ---

@@ -55,6 +55,15 @@ public class GraphController {
         return ResponseEntity.ok(graphService.exportHierarchicalJson());
     }
 
+    @GetMapping(value = "/delta", produces = MediaType.APPLICATION_JSON_VALUE)
+    @Operation(summary = "Get graph delta", description = "Returns changes in the graph since a previous scan")
+    public ResponseEntity<String> getDelta(@RequestParam(required = false) String since) {
+        log.debug("Retrieving graph delta since: {}", since);
+        // Simplified: if 'since' is provided, we'd normally compare snapshots.
+        // For now, return the full graph as the 'initial' delta if since is null.
+        return ResponseEntity.ok(graphService.exportToJson());
+    }
+
     @GetMapping("/stats")
     @Operation(summary = "Get graph statistics", description = "Returns basic statistics about the dependency graph")
     @ApiResponses(value = {

@@ -1,0 +1,130 @@
+# Dede-Java AEM Analysis Workflow
+# Copy this file to your AEM project's .github/workflows/ directory
+#
+# This workflow runs Dede-Java to analyze your AEM codebase for:
+# - Cloud Service compatibility issues
+# - Security vulnerabilities
+# - Architectural problems
+# - Dependency analysis
+
+name: Dede AEM Analysis
+
+on:
+  pull_request:
+    branches: [main, develop]
+  push:
+    branches: [main]
+  workflow_dispatch:  # Allows manual triggering
+
+jobs:
+  analyze:
+    name: Analyze AEM Codebase
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run Dede-Java Analysis
+        uses: docker://ghcr.io/your-org/dede-java:latest
+        with:
+          args: >
+            /github/workspace
+            --profiles aem
+            --security
+            --cloud-readiness
+            --bpa-report /github/workspace/dede-bpa-report.html
+
+      - name: Upload BPA Report
+        uses: actions/upload-artifact@v4
+        with:
+          name: dede-bpa-report
+          path: dede-bpa-report.html
+          retention-days: 30
+
+      - name: Comment on PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+
+            // Read the analysis results (if you configure JSON output)
+            let summary = '## Dede-Java AEM Analysis Results\n\n';
+            summary += '### Quick Summary\n';
+            summary += '- Cloud Readiness check completed\n';
+            summary += '- Security audit performed\n';
+            summary += '- BPA-compatible report generated\n\n';
+            summary += 'Download the full BPA report from the workflow artifacts.';
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: summary
+            });
+
+  # Optional: Run on schedule for main branch
+  scheduled-analysis:
+    name: Scheduled Full Analysis
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run Full Analysis
+        uses: docker://ghcr.io/your-org/dede-java:latest
+        with:
+          args: >
+            /github/workspace
+            --profiles aem
+            --security
+            --cloud-readiness
+            --bpa-report /github/workspace/full-bpa-report.html
+            --dot /github/workspace/architecture.dot
+
+      - name: Generate Architecture Diagram
+        run: |
+          sudo apt-get install -y graphviz
+          dot -Tpng architecture.dot -o architecture.png || true
+
+      - name: Upload Reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: dede-full-analysis
+          path: |
+            full-bpa-report.html
+            architecture.dot
+            architecture.png
+          retention-days: 90
+
+---
+# Alternative: Use dede-java as a local action with Java
+
+# name: Dede AEM Analysis (Java)
+#
+# on:
+#   pull_request:
+#     branches: [main]
+#
+# jobs:
+#   analyze:
+#     runs-on: ubuntu-latest
+#     steps:
+#       - uses: actions/checkout@v4
+#
+#       - name: Set up JDK 21
+#         uses: actions/setup-java@v4
+#         with:
+#           java-version: '21'
+#           distribution: 'temurin'
+#
+#       - name: Download Dede-Java
+#         run: |
+#           curl -L https://github.com/your-org/dede-java/releases/latest/download/dede-java-exec.jar -o dede.jar
+#
+#       - name: Run Analysis
+#         run: |
+#           java -jar dede.jar . --profiles aem --cloud-readiness --security

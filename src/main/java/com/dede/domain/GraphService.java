@@ -6,10 +6,14 @@ import com.dede.domain.model.RelationshipType;
 import org.jgrapht.Graph;
 import org.springframework.stereotype.Service;
 
+import com.dede.domain.model.NodeType;
+
 import java.io.File;
 import java.io.IOException;
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * Facade for the architectural graph system.
@@ -33,6 +37,13 @@ public class GraphService {
         repository.addNode(node);
     }
 
+    /**
+     * Clear all metadata for a specific file before re-scanning it.
+     */
+    public void removeNodesByFilePath(String filePath) {
+        repository.removeNodesByFilePath(filePath);
+    }
+
     public Relationship addEdge(CodeNode source, CodeNode target, RelationshipType type) {
         return repository.addEdge(source, target, type, 100);
     }
@@ -47,6 +58,12 @@ public class GraphService {
 
     public Optional<CodeNode> findNodeById(String id) {
         return repository.findNodeById(id);
+    }
+
+    public List<CodeNode> findNodesByType(NodeType type) {
+        return repository.getAllNodes().stream()
+            .filter(node -> node.getType() == type)
+            .collect(Collectors.toList());
     }
 
     public Graph<CodeNode, Relationship> getGraph() {

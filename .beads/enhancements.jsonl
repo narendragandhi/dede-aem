@@ -1,6 +1,9 @@
-{"id": "bd-021", "title": "Accuracy & Intelligence Epic", "type": "epic", "status": "in_progress", "priority": "high"}
-{"id": "bd-022", "title": "Implement Deep Symbol Solver", "type": "task", "status": "open", "priority": "high", "parent": "bd-021"}
-{"id": "bd-023", "title": "Implement AEM/Sling Annotation Parsing", "type": "task", "status": "open", "priority": "medium", "parent": "bd-021"}
-{"id": "bd-024", "title": "Visualization Epic", "type": "epic", "status": "open", "priority": "medium"}
-{"id": "bd-025", "title": "Implement Graph REST API", "type": "task", "status": "open", "priority": "medium", "parent": "bd-024"}
+{"id": "bd-021", "title": "Accuracy & Intelligence Epic", "type": "epic", "status": "completed", "priority": "high"}
+{"id": "bd-022", "title": "Implement Deep Symbol Solver", "type": "task", "status": "completed", "priority": "high", "parent": "bd-021"}
+{"id": "bd-023", "title": "Implement AEM/Sling Annotation Parsing", "type": "task", "status": "completed", "priority": "medium", "parent": "bd-021"}
+{"id": "bd-100", "title": "Dispatcher-to-Bundle Traceability Epic", "type": "epic", "status": "completed", "priority": "high"}
+{"id": "bd-200", "title": "Incremental Graph Updates Epic", "type": "epic", "status": "completed", "priority": "medium"}
+{"id": "bd-300", "title": "Advanced Visualization Backend", "type": "task", "status": "completed", "priority": "medium"}
+{"id": "bd-024", "title": "Visualization Epic", "type": "epic", "status": "in_progress", "priority": "medium"}
+{"id": "bd-025", "title": "Implement Graph REST API", "type": "task", "status": "completed", "priority": "medium", "parent": "bd-024"}
 {"id": "bd-026", "title": "Embed Cytoscape.js UI", "type": "task", "status": "open", "priority": "medium", "parent": "bd-024"}

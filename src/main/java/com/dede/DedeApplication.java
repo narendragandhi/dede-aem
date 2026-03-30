@@ -8,6 +8,8 @@ import com.dede.domain.GraphService;
 import com.dede.knowledge.GovernanceEngine;
 import com.dede.intelligence.VulnerabilityService;
 import com.dede.intelligence.GraphAgentSkills;
+import com.dede.intelligence.CloudReadinessAnalyzer;
+import com.dede.cloud.BpaReportGenerator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.CommandLineRunner;
@@ -33,7 +35,8 @@ public class DedeApplication {
     public CommandLineRunner commandLineRunner(ProjectScanner scanner, SourceParser sourceParser,
                                              GraphService graphService, GovernanceEngine governance,
                                              VulnerabilityService security, GraphAgentSkills agent,
-                                             OsgiLinker osgiLinker, DeltaAnalyzer deltaAnalyzer) {
+                                             OsgiLinker osgiLinker, DeltaAnalyzer deltaAnalyzer,
+                                             CloudReadinessAnalyzer cloudAnalyzer, BpaReportGenerator bpaGenerator) {
         return args -> {
             if (args.length == 0 || "--help".equals(args[0]) || "-h".equals(args[0])) {
                 printHelp();
@@ -48,6 +51,9 @@ public class DedeApplication {
             String profiles = "aem"; // Default
             String snapshotPath = null;
             String compareSnapshot = null;
+            String bpaReportPath = null;
+            boolean cloudReadiness = false;
+            boolean watchMode = false;
 
             for (int i = 0; i < args.length; i++) {
                 if ("--rules".equals(args[i]) && i + 1 < args.length) {
@@ -70,6 +76,15 @@ public class DedeApplication {
                 }
                 if ("--compare".equals(args[i]) && i + 1 < args.length) {
                     compareSnapshot = args[i + 1];
+                }
+                if ("--bpa-report".equals(args[i]) && i + 1 < args.length) {
+                    bpaReportPath = args[i + 1];
+                }
+                if ("--cloud-readiness".equals(args[i])) {
+                    cloudReadiness = true;
+                }
+                if ("--watch".equals(args[i])) {
+                    watchMode = true;
                 }
             }
 
@@ -127,6 +142,29 @@ public class DedeApplication {
                 log.info("\n{}", deltaAnalyzer.generateTextReport(deltaReport));
             }
 
+            // Cloud Readiness Analysis
+            if (cloudReadiness) {
+                log.info("Running AEM Cloud Service readiness analysis...");
+                var cloudReport = cloudAnalyzer.analyze();
+                log.info("\n{}", cloudAnalyzer.generateTextReport(cloudReport));
+            }
+
+            // BPA Report Generation
+            if (bpaReportPath != null) {
+                log.info("Generating BPA-compatible report: {}", bpaReportPath);
+                var cloudReport = cloudAnalyzer.analyze();
+                String projectName = Path.of(projectPath).getFileName().toString();
+                var bpaReport = bpaGenerator.generateReport(cloudReport, projectName);
+
+                Path outputPath = Path.of(bpaReportPath);
+                if (bpaReportPath.endsWith(".html")) {
+                    bpaGenerator.exportToHtml(bpaReport, outputPath);
+                } else {
+                    bpaGenerator.exportToJson(bpaReport, outputPath);
+                }
+                log.info("BPA report saved to: {}", bpaReportPath);
+            }
+
             // AI Insights
             List<String> suggestions = agent.suggestRefactoring();
             if (suggestions.isEmpty()) {
@@ -134,6 +172,10 @@ public class DedeApplication {
             } else {
                 log.info("AI Refactoring Suggestions:");
                 suggestions.forEach(s -> log.info("  - {}", s));
+            }
+
+            if (watchMode) {
+                scanner.startWatching(projectPath);
             }
         };
     }
@@ -163,6 +205,9 @@ public class DedeApplication {
         log.info("  --analyze <nodeId>  Perform impact analysis for a node");
         log.info("  --snapshot <dir>    Save graph snapshot to directory");
         log.info("  --compare <file>    Compare with previous snapshot");
+        log.info("  --cloud-readiness   Run AEM Cloud Service readiness check");
+        log.info("  --bpa-report <path> Generate BPA-compatible report (.json or .html)");
+        log.info("  --watch             Start watching for file changes and update incrementally");
         log.info("");
         log.info("Web UI:      http://localhost:8080/");
         log.info("GraphQL:     http://localhost:8080/graphql");

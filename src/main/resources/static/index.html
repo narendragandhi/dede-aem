@@ -4,7 +4,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Dede-Java - Architectural Intelligence</title>
-    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <!-- Cytoscape.js Core -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape/3.28.1/cytoscape.min.js"></script>
+    <!-- Layout Algorithms -->
+    <script src="https://cdn.jsdelivr.net/npm/cytoscape-cose-bilkent@4.1.0/cytoscape-cose-bilkent.min.js"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
@@ -23,6 +26,7 @@
             display: flex;
             flex-direction: column;
             overflow: hidden;
+            z-index: 10;
         }
         #sidebar header {
             padding: 16px;
@@ -63,7 +67,6 @@
             font-size: 11px;
             color: #8b949e;
             text-transform: uppercase;
-            letter-spacing: 0.5px;
         }
 
         /* Search */
@@ -78,25 +81,12 @@
             border: 1px solid #30363d;
             border-radius: 6px;
             color: #c9d1d9;
-            font-size: 14px;
         }
-        #search-input:focus {
-            outline: none;
-            border-color: #58a6ff;
-            box-shadow: 0 0 0 3px rgba(88,166,255,0.2);
-        }
-        #search-input::placeholder { color: #484f58; }
 
         /* Filters */
         #filters {
             padding: 12px 16px;
             border-bottom: 1px solid #30363d;
-        }
-        #filters h3 {
-            font-size: 12px;
-            color: #8b949e;
-            margin-bottom: 8px;
-            text-transform: uppercase;
         }
         .filter-chips {
             display: flex;
@@ -110,60 +100,24 @@
             border-radius: 20px;
             font-size: 12px;
             cursor: pointer;
-            transition: all 0.2s;
         }
-        .chip:hover { border-color: #58a6ff; }
         .chip.active {
             background: #388bfd;
-            border-color: #388bfd;
             color: white;
-        }
-
-        /* Node list */
-        #node-list {
-            flex: 1;
-            overflow-y: auto;
-            padding: 8px;
-        }
-        .node-item {
-            padding: 10px 12px;
-            border-radius: 6px;
-            cursor: pointer;
-            transition: background 0.2s;
-            border-left: 3px solid transparent;
-        }
-        .node-item:hover { background: #21262d; }
-        .node-item.selected {
-            background: #21262d;
-            border-left-color: #58a6ff;
-        }
-        .node-name {
-            font-size: 13px;
-            font-weight: 500;
-            color: #c9d1d9;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-        }
-        .node-type {
-            font-size: 11px;
-            color: #8b949e;
-            margin-top: 2px;
         }
 
         /* Graph container */
         #graph-container {
             flex: 1;
             position: relative;
-            overflow: hidden;
-        }
-        #graph-svg {
-            width: 100%;
-            height: 100%;
             background: #0d1117;
         }
+        #cy {
+            width: 100%;
+            height: 100%;
+        }
 
-        /* Node details panel */
+        /* Details Panel */
         #details-panel {
             position: absolute;
             top: 16px;
@@ -172,93 +126,54 @@
             background: #161b22;
             border: 1px solid #30363d;
             border-radius: 12px;
-            box-shadow: 0 8px 24px rgba(0,0,0,0.4);
             display: none;
             max-height: calc(100vh - 32px);
             overflow-y: auto;
+            z-index: 100;
         }
         #details-panel.visible { display: block; }
-        #details-header {
-            padding: 16px;
-            border-bottom: 1px solid #30363d;
-            display: flex;
-            justify-content: space-between;
-            align-items: flex-start;
-        }
-        #details-close {
-            background: none;
-            border: none;
-            color: #8b949e;
-            cursor: pointer;
-            font-size: 20px;
-            line-height: 1;
-        }
-        #details-title {
-            font-size: 16px;
-            font-weight: 600;
-            word-break: break-all;
-        }
-        #details-type {
-            display: inline-block;
-            padding: 2px 8px;
-            background: #388bfd;
-            border-radius: 4px;
-            font-size: 11px;
-            margin-top: 8px;
-        }
-        #details-content { padding: 16px; }
-        .detail-section {
-            margin-bottom: 16px;
-        }
-        .detail-section h4 {
-            font-size: 11px;
-            color: #8b949e;
-            text-transform: uppercase;
-            margin-bottom: 8px;
-        }
-        .relation-list { list-style: none; }
-        .relation-item {
-            padding: 8px;
-            background: #21262d;
-            border-radius: 6px;
-            margin-bottom: 4px;
-            font-size: 13px;
-            cursor: pointer;
-        }
-        .relation-item:hover { background: #30363d; }
-        .relation-type {
-            font-size: 10px;
-            color: #8b949e;
-            text-transform: uppercase;
-        }
 
         /* Controls */
         #controls {
             position: absolute;
-            bottom: 16px;
+            bottom: 24px;
             left: 50%;
             transform: translateX(-50%);
             display: flex;
-            gap: 8px;
-            background: #161b22;
-            padding: 8px 12px;
-            border-radius: 8px;
+            gap: 12px;
+            background: rgba(22, 27, 34, 0.9);
+            padding: 12px;
+            border-radius: 12px;
             border: 1px solid #30363d;
+            backdrop-filter: blur(8px);
         }
-        .control-btn {
-            padding: 8px 16px;
+        .btn {
             background: #21262d;
             border: 1px solid #30363d;
-            border-radius: 6px;
             color: #c9d1d9;
+            padding: 8px 16px;
+            border-radius: 6px;
             cursor: pointer;
             font-size: 13px;
-            transition: all 0.2s;
         }
-        .control-btn:hover {
-            background: #30363d;
-            border-color: #58a6ff;
+        .btn:hover { background: #30363d; border-color: #58a6ff; }
+        .btn.primary { background: #238636; border: none; color: white; }
+
+        /* Mode indicators */
+        #mode-badge {
+            position: absolute;
+            top: 16px;
+            left: 336px;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 11px;
+            font-weight: bold;
+            text-transform: uppercase;
+            background: #21262d;
+            border: 1px solid #30363d;
+            display: none;
         }
+        #mode-badge.blast-radius { display: block; background: #f85149; color: white; border: none; }
 
         /* Loading */
         #loading {
@@ -269,51 +184,12 @@
             text-align: center;
         }
         .spinner {
-            width: 40px;
-            height: 40px;
-            border: 3px solid #30363d;
-            border-top-color: #58a6ff;
-            border-radius: 50%;
-            animation: spin 1s linear infinite;
+            width: 40px; height: 40px;
+            border: 3px solid #30363d; border-top-color: #58a6ff;
+            border-radius: 50%; animation: spin 1s linear infinite;
             margin: 0 auto 16px;
         }
         @keyframes spin { to { transform: rotate(360deg); } }
-
-        /* Legend */
-        #legend {
-            position: absolute;
-            bottom: 16px;
-            right: 16px;
-            background: #161b22;
-            border: 1px solid #30363d;
-            border-radius: 8px;
-            padding: 12px;
-        }
-        .legend-title {
-            font-size: 11px;
-            color: #8b949e;
-            text-transform: uppercase;
-            margin-bottom: 8px;
-        }
-        .legend-item {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            font-size: 12px;
-            margin-bottom: 4px;
-        }
-        .legend-color {
-            width: 12px;
-            height: 12px;
-            border-radius: 50%;
-        }
-
-        /* Path highlight */
-        .path-highlight {
-            stroke: #f0883e !important;
-            stroke-width: 3px !important;
-            stroke-opacity: 1 !important;
-        }
     </style>
 </head>
 <body>
@@ -323,487 +199,197 @@
                 <h1>Dede-Java</h1>
                 <div class="subtitle">Architectural Intelligence Engine</div>
             </header>
-
             <div id="stats">
-                <div class="stat-card">
-                    <div class="stat-value" id="node-count">-</div>
-                    <div class="stat-label">Nodes</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-value" id="edge-count">-</div>
-                    <div class="stat-label">Edges</div>
-                </div>
+                <div class="stat-card"><div class="stat-value" id="node-count">-</div><div class="stat-label">Nodes</div></div>
+                <div class="stat-card"><div class="stat-value" id="edge-count">-</div><div class="stat-label">Edges</div></div>
             </div>
-
             <div id="search-box">
-                <input type="text" id="search-input" placeholder="Search nodes...">
+                <input type="text" id="search-input" placeholder="Search architecture...">
             </div>
-
             <div id="filters">
-                <h3>Node Types</h3>
                 <div class="filter-chips" id="type-filters"></div>
             </div>
-
-            <div id="node-list"></div>
+            <div id="node-list" style="flex:1; overflow-y:auto; padding:8px;"></div>
         </div>
 
         <div id="graph-container">
-            <svg id="graph-svg"></svg>
-
-            <div id="loading">
-                <div class="spinner"></div>
-                <div>Loading graph...</div>
-            </div>
+            <div id="cy"></div>
+            <div id="mode-badge">Blast Radius Mode</div>
+            <div id="loading"><div class="spinner"></div><div>Building Topological Map...</div></div>
 
             <div id="details-panel">
-                <div id="details-header">
-                    <div>
-                        <div id="details-title"></div>
-                        <span id="details-type"></span>
-                    </div>
-                    <button id="details-close">&times;</button>
+                <div id="details-header" style="padding:16px; border-bottom:1px solid #30363d;">
+                    <h2 id="details-title" style="font-size:16px;">Node Details</h2>
                 </div>
-                <div id="details-content"></div>
+                <div id="details-content" style="padding:16px;"></div>
             </div>
 
             <div id="controls">
-                <button class="control-btn" id="btn-zoom-in">Zoom In</button>
-                <button class="control-btn" id="btn-zoom-out">Zoom Out</button>
-                <button class="control-btn" id="btn-reset">Reset View</button>
-                <button class="control-btn" id="btn-export">Export SVG</button>
-            </div>
-
-            <div id="legend">
-                <div class="legend-title">Node Types</div>
-                <div id="legend-items"></div>
+                <button class="btn primary" id="btn-layout">Auto-Layout</button>
+                <button class="btn" id="btn-blast">Blast Radius Explorer</button>
+                <button class="btn" id="btn-reset">Reset View</button>
+                <button class="btn" id="btn-refresh">Pull Delta</button>
             </div>
         </div>
     </div>
 
     <script>
-        // Color scheme for node types
-        const nodeColors = {
-            'CLASS': '#58a6ff',
-            'INTERFACE': '#a371f7',
-            'METHOD': '#3fb950',
-            'SLING_MODEL': '#f0883e',
-            'OSGI_COMPONENT': '#d29922',
-            'OSGI_SERVICE': '#db6d28',
-            'HTL_FILE': '#f778ba',
-            'PACKAGE': '#8b949e',
-            'BUNDLE': '#7ee787',
-            'JCR_RESOURCE_TYPE': '#79c0ff',
-            'SLING_SERVLET': '#ff7b72',
-            'SLING_FILTER': '#ffa657',
-            'default': '#8b949e'
-        };
+        const nodeStyles = [
+            { selector: 'node', style: { 
+                'label': 'data(name)', 'color': '#c9d1d9', 'font-size': '10px',
+                'background-color': '#8b949e', 'width': 20, 'height': 20,
+                'text-valign': 'bottom', 'text-margin-y': 4, 'text-wrap': 'ellipsis', 'text-max-width': 80
+            }},
+            { selector: 'node[type="BUNDLE"]', style: { 'background-color': '#238636', 'width': 40, 'height': 40, 'font-size': '12px', 'font-weight': 'bold' }},
+            { selector: 'node[type="SLING_SERVLET"]', style: { 'background-color': '#ff7b72', 'shape': 'rectangle' }},
+            { selector: 'node[type="SLING_MODEL"]', style: { 'background-color': '#f0883e', 'shape': 'diamond' }},
+            { selector: 'node[type="OSGI_SERVICE"]', style: { 'background-color': '#db6d28', 'shape': 'triangle' }},
+            { selector: 'node[type="JCR_RESOURCE_TYPE"]', style: { 'background-color': '#79c0ff' }},
+            { selector: 'node[type="VULNERABILITY"]', style: { 'background-color': '#f85149', 'width': 30, 'height': 30, 'label': '⚠ data(name)' }},
+            { selector: 'edge', style: {
+                'width': 1, 'line-color': '#30363d', 'target-arrow-color': '#30363d',
+                'target-arrow-shape': 'triangle', 'curve-style': 'bezier', 'opacity': 0.6
+            }},
+            { selector: 'edge[type="EXPOSES"]', style: { 'line-color': '#f85149', 'width': 2, 'line-style': 'dashed' }},
+            { selector: 'edge[type="CONSUMES"]', style: { 'line-color': '#d29922' }},
+            { selector: '.highlighted', style: { 'background-color': '#58a6ff', 'line-color': '#58a6ff', 'target-arrow-color': '#58a6ff', 'width': 4, 'opacity': 1, 'z-index': 999 }},
+            { selector: '.blast-target', style: { 'background-color': '#f85149', 'line-color': '#f85149', 'width': 3, 'opacity': 1 }}
+        ];
 
-        // Edge colors by type
-        const edgeColors = {
-            'CALLS': '#3fb950',
-            'EXTENDS': '#58a6ff',
-            'IMPLEMENTS': '#a371f7',
-            'USES': '#f0883e',
-            'CONSUMES': '#d29922',
-            'PROVIDES': '#7ee787',
-            'CONTAINS': '#484f58',
-            'DECLARES': '#484f58',
-            'default': '#30363d'
-        };
+        let cy;
+        let isBlastMode = false;
 
-        let graphData = { nodes: [], links: [] };
-        let simulation = null;
-        let svg, g, link, node, zoom;
-        let selectedNode = null;
-        let activeFilters = new Set();
+        async function init() {
+            const response = await fetch('/api/graph');
+            const data = await response.json();
+            
+            const elements = {
+                nodes: data.nodes.map(n => ({ data: { id: n.id, name: n.name, type: n.type, ...n.properties } })),
+                edges: data.edges.map(e => ({ data: { source: e.source, target: e.target, type: e.type } }))
+            };
 
-        // Initialize
-        document.addEventListener('DOMContentLoaded', async () => {
-            await loadGraph();
-            setupSVG();
-            renderGraph();
-            setupEventListeners();
-        });
+            cy = cytoscape({
+                container: document.getElementById('cy'),
+                elements: elements,
+                style: nodeStyles,
+                layout: { name: 'cose-bilkent', animate: false }
+            });
 
-        async function loadGraph() {
-            try {
-                const response = await fetch('/api/graph');
-                const json = await response.json();
+            document.getElementById('node-count').textContent = data.nodes.length;
+            document.getElementById('edge-count').textContent = data.edges.length;
+            document.getElementById('loading').style.display = 'none';
 
-                // Parse the JSON structure - handle both formats
-                let data;
-                if (typeof json === 'string') {
-                    data = JSON.parse(json);
+            setupInteractions();
+            buildFilters(data.nodes);
+        }
+
+        function setupInteractions() {
+            cy.on('tap', 'node', (evt) => {
+                const node = evt.target;
+                if (isBlastMode) {
+                    runBlastRadius(node);
                 } else {
-                    data = json;
+                    showDetails(node);
                 }
-
-                // Convert to D3 format
-                const nodeMap = new Map();
-
-                data.nodes.forEach(n => {
-                    nodeMap.set(n.id, {
-                        id: n.id,
-                        name: n.name,
-                        type: n.type,
-                        signature: n.signature || n.id
-                    });
-                });
-
-                graphData.nodes = Array.from(nodeMap.values());
-                graphData.links = data.edges.map(e => ({
-                    source: e.source,
-                    target: e.target,
-                    type: e.type
-                })).filter(e => nodeMap.has(e.source) && nodeMap.has(e.target));
-
-                // Update stats
-                document.getElementById('node-count').textContent = graphData.nodes.length.toLocaleString();
-                document.getElementById('edge-count').textContent = graphData.links.length.toLocaleString();
-
-                // Build type filters
-                const types = [...new Set(graphData.nodes.map(n => n.type))].sort();
-                const filtersContainer = document.getElementById('type-filters');
-                filtersContainer.innerHTML = types.slice(0, 12).map(type =>
-                    `<span class="chip active" data-type="${type}">${type.replace(/_/g, ' ')}</span>`
-                ).join('');
-
-                types.forEach(t => activeFilters.add(t));
-
-                // Build legend
-                const legendItems = document.getElementById('legend-items');
-                legendItems.innerHTML = types.slice(0, 8).map(type =>
-                    `<div class="legend-item">
-                        <div class="legend-color" style="background: ${nodeColors[type] || nodeColors.default}"></div>
-                        <span>${type.replace(/_/g, ' ')}</span>
-                    </div>`
-                ).join('');
-
-                // Hide loading
-                document.getElementById('loading').style.display = 'none';
-
-                // Populate node list (first 100)
-                updateNodeList(graphData.nodes);
-
-            } catch (error) {
-                console.error('Failed to load graph:', error);
-                document.getElementById('loading').innerHTML =
-                    '<div style="color: #f85149;">Failed to load graph. Make sure the server is running.</div>';
-            }
-        }
-
-        function setupSVG() {
-            const container = document.getElementById('graph-container');
-            const width = container.clientWidth;
-            const height = container.clientHeight;
-
-            svg = d3.select('#graph-svg')
-                .attr('width', width)
-                .attr('height', height);
-
-            // Add zoom behavior
-            zoom = d3.zoom()
-                .scaleExtent([0.1, 4])
-                .on('zoom', (event) => {
-                    g.attr('transform', event.transform);
-                });
-
-            svg.call(zoom);
-
-            // Add arrow markers for edges
-            svg.append('defs').selectAll('marker')
-                .data(['arrow'])
-                .join('marker')
-                .attr('id', 'arrow')
-                .attr('viewBox', '0 -5 10 10')
-                .attr('refX', 20)
-                .attr('refY', 0)
-                .attr('markerWidth', 6)
-                .attr('markerHeight', 6)
-                .attr('orient', 'auto')
-                .append('path')
-                .attr('d', 'M0,-5L10,0L0,5')
-                .attr('fill', '#484f58');
-
-            g = svg.append('g');
-        }
-
-        function renderGraph() {
-            const container = document.getElementById('graph-container');
-            const width = container.clientWidth;
-            const height = container.clientHeight;
-
-            // Filter nodes based on active filters
-            const visibleNodes = graphData.nodes.filter(n => activeFilters.has(n.type));
-            const visibleNodeIds = new Set(visibleNodes.map(n => n.id));
-            const visibleLinks = graphData.links.filter(l =>
-                visibleNodeIds.has(typeof l.source === 'object' ? l.source.id : l.source) &&
-                visibleNodeIds.has(typeof l.target === 'object' ? l.target.id : l.target)
-            );
-
-            // Limit for performance - take a sample if too large
-            const maxNodes = 500;
-            const maxLinks = 1000;
-            const sampledNodes = visibleNodes.length > maxNodes
-                ? visibleNodes.slice(0, maxNodes)
-                : visibleNodes;
-            const sampledNodeIds = new Set(sampledNodes.map(n => n.id));
-            const sampledLinks = visibleLinks
-                .filter(l =>
-                    sampledNodeIds.has(typeof l.source === 'object' ? l.source.id : l.source) &&
-                    sampledNodeIds.has(typeof l.target === 'object' ? l.target.id : l.target)
-                )
-                .slice(0, maxLinks);
-
-            // Create simulation
-            simulation = d3.forceSimulation(sampledNodes)
-                .force('link', d3.forceLink(sampledLinks).id(d => d.id).distance(80))
-                .force('charge', d3.forceManyBody().strength(-200))
-                .force('center', d3.forceCenter(width / 2, height / 2))
-                .force('collision', d3.forceCollide().radius(25));
-
-            // Clear previous
-            g.selectAll('*').remove();
-
-            // Draw links
-            link = g.append('g')
-                .selectAll('line')
-                .data(sampledLinks)
-                .join('line')
-                .attr('stroke', d => edgeColors[d.type] || edgeColors.default)
-                .attr('stroke-width', 1.5)
-                .attr('stroke-opacity', 0.6)
-                .attr('marker-end', 'url(#arrow)');
-
-            // Draw nodes
-            node = g.append('g')
-                .selectAll('g')
-                .data(sampledNodes)
-                .join('g')
-                .attr('cursor', 'pointer')
-                .call(d3.drag()
-                    .on('start', dragstarted)
-                    .on('drag', dragged)
-                    .on('end', dragended));
-
-            node.append('circle')
-                .attr('r', d => d.type === 'PACKAGE' ? 12 : 8)
-                .attr('fill', d => nodeColors[d.type] || nodeColors.default)
-                .attr('stroke', '#0d1117')
-                .attr('stroke-width', 2);
-
-            node.append('title')
-                .text(d => `${d.name}\n${d.type}`);
-
-            // Click to select
-            node.on('click', (event, d) => {
-                event.stopPropagation();
-                selectNode(d);
             });
 
-            // Update positions on tick
-            simulation.on('tick', () => {
-                link
-                    .attr('x1', d => d.source.x)
-                    .attr('y1', d => d.source.y)
-                    .attr('x2', d => d.target.x)
-                    .attr('y2', d => d.target.y);
+            document.getElementById('btn-layout').onclick = () => cy.layout({ name: 'cose-bilkent', animate: true }).run();
+            document.getElementById('btn-reset').onclick = () => {
+                cy.elements().removeClass('highlighted blast-target');
+                cy.fit();
+                isBlastMode = false;
+                document.getElementById('mode-badge').classList.remove('blast-radius');
+            };
+            document.getElementById('btn-blast').onclick = () => {
+                isBlastMode = !isBlastMode;
+                document.getElementById('mode-badge').classList.toggle('blast-radius', isBlastMode);
+                if (isBlastMode) alert("Blast Radius Mode: Click any node to see all transitive consumers.");
+            };
+            document.getElementById('btn-refresh').onclick = async () => {
+                const res = await fetch('/api/graph/delta');
+                const data = await res.json();
+                // Incremental update logic could go here, for now reload full
+                cy.json({ elements: { 
+                    nodes: data.nodes.map(n => ({ data: { id: n.id, name: n.name, type: n.type } })),
+                    edges: data.edges.map(e => ({ data: { source: e.source, target: e.target, type: e.type } }))
+                }});
+                cy.layout({ name: 'cose-bilkent' }).run();
+            };
 
-                node.attr('transform', d => `translate(${d.x},${d.y})`);
-            });
+            // Search
+            document.getElementById('search-input').oninput = (e) => {
+                const val = e.target.value.toLowerCase();
+                if (!val) { cy.elements().style('opacity', 1); return; }
+                cy.elements().style('opacity', 0.1);
+                cy.nodes().filter(n => n.data('name').toLowerCase().includes(val)).style('opacity', 1).connectedEdges().style('opacity', 1);
+            };
         }
 
-        function dragstarted(event) {
-            if (!event.active) simulation.alphaTarget(0.3).restart();
-            event.subject.fx = event.subject.x;
-            event.subject.fy = event.subject.y;
+        function runBlastRadius(node) {
+            cy.elements().removeClass('blast-target');
+            // Find all nodes that depend on this node (incoming paths)
+            const collection = cy.elements().bfs({
+                root: node,
+                directed: true,
+                directedType: 'inbound' // What calls this?
+            }).path;
+            
+            collection.addClass('blast-target');
+            node.addClass('blast-target');
+            
+            const impactedCount = collection.nodes().length - 1;
+            logImpact(node.data('name'), impactedCount);
         }
 
-        function dragged(event) {
-            event.subject.fx = event.x;
-            event.subject.fy = event.y;
-        }
-
-        function dragended(event) {
-            if (!event.active) simulation.alphaTarget(0);
-            event.subject.fx = null;
-            event.subject.fy = null;
-        }
-
-        function selectNode(nodeData) {
-            selectedNode = nodeData;
-
-            // Highlight in graph
-            node.select('circle')
-                .attr('stroke', d => d.id === nodeData.id ? '#58a6ff' : '#0d1117')
-                .attr('stroke-width', d => d.id === nodeData.id ? 4 : 2);
-
-            // Show details panel
+        function showDetails(node) {
             const panel = document.getElementById('details-panel');
             panel.classList.add('visible');
-
-            document.getElementById('details-title').textContent = nodeData.name;
-            document.getElementById('details-type').textContent = nodeData.type;
-
-            // Find connected nodes
-            const outgoing = graphData.links
-                .filter(l => (typeof l.source === 'object' ? l.source.id : l.source) === nodeData.id)
-                .map(l => ({
-                    node: graphData.nodes.find(n => n.id === (typeof l.target === 'object' ? l.target.id : l.target)),
-                    type: l.type
-                }))
-                .filter(r => r.node);
-
-            const incoming = graphData.links
-                .filter(l => (typeof l.target === 'object' ? l.target.id : l.target) === nodeData.id)
-                .map(l => ({
-                    node: graphData.nodes.find(n => n.id === (typeof l.source === 'object' ? l.source.id : l.source)),
-                    type: l.type
-                }))
-                .filter(r => r.node);
-
-            let content = '';
-
-            if (nodeData.signature) {
-                content += `<div class="detail-section">
-                    <h4>Signature</h4>
-                    <div style="font-family: monospace; font-size: 12px; color: #79c0ff;">${nodeData.signature}</div>
-                </div>`;
-            }
-
-            if (outgoing.length > 0) {
-                content += `<div class="detail-section">
-                    <h4>Outgoing (${outgoing.length})</h4>
-                    <ul class="relation-list">
-                        ${outgoing.slice(0, 20).map(r => `
-                            <li class="relation-item" data-id="${r.node.id}">
-                                <div>${r.node.name}</div>
-                                <div class="relation-type">${r.type}</div>
-                            </li>
-                        `).join('')}
-                        ${outgoing.length > 20 ? `<li style="color: #8b949e; padding: 8px;">... and ${outgoing.length - 20} more</li>` : ''}
-                    </ul>
-                </div>`;
-            }
-
-            if (incoming.length > 0) {
-                content += `<div class="detail-section">
-                    <h4>Incoming (${incoming.length})</h4>
-                    <ul class="relation-list">
-                        ${incoming.slice(0, 20).map(r => `
-                            <li class="relation-item" data-id="${r.node.id}">
-                                <div>${r.node.name}</div>
-                                <div class="relation-type">${r.type}</div>
-                            </li>
-                        `).join('')}
-                        ${incoming.length > 20 ? `<li style="color: #8b949e; padding: 8px;">... and ${incoming.length - 20} more</li>` : ''}
-                    </ul>
-                </div>`;
-            }
-
-            document.getElementById('details-content').innerHTML = content || '<p style="color: #8b949e;">No connections</p>';
-
-            // Make relation items clickable
-            document.querySelectorAll('.relation-item').forEach(item => {
-                item.addEventListener('click', () => {
-                    const targetId = item.dataset.id;
-                    const targetNode = graphData.nodes.find(n => n.id === targetId);
-                    if (targetNode) selectNode(targetNode);
-                });
+            document.getElementById('details-title').textContent = node.data('name');
+            let html = `<div style="font-size:12px; color:#8b949e; margin-bottom:12px;">Type: ${node.data('type')}</div>`;
+            
+            // Show properties
+            const props = node.data();
+            Object.keys(props).forEach(k => {
+                if (['id', 'name', 'type'].includes(k)) return;
+                html += `<div style="margin-bottom:8px;"><span style="color:#8b949e;">${k}:</span> <span style="font-family:monospace;">${props[k]}</span></div>`;
             });
+
+            document.getElementById('details-content').innerHTML = html;
         }
 
-        function updateNodeList(nodes) {
-            const list = document.getElementById('node-list');
-            const filtered = nodes
-                .filter(n => activeFilters.has(n.type))
-                .slice(0, 100);
-
-            list.innerHTML = filtered.map(n => `
-                <div class="node-item" data-id="${n.id}">
-                    <div class="node-name">${n.name}</div>
-                    <div class="node-type">${n.type}</div>
+        function logImpact(name, count) {
+            console.log(`Blast Radius for ${name}: ${count} impacted nodes.`);
+            const panel = document.getElementById('details-panel');
+            panel.classList.add('visible');
+            document.getElementById('details-title').textContent = "Impact: " + name;
+            document.getElementById('details-content').innerHTML = `
+                <div style="text-align:center; padding:20px;">
+                    <div style="font-size:48px; color:#f85149; font-weight:bold;">${count}</div>
+                    <div style="color:#8b949e; text-transform:uppercase; font-size:12px;">Impacted Nodes</div>
+                    <p style="margin-top:20px; font-size:13px;">A change to <b>${name}</b> potentially affects ${count} transitive consumers in the architecture.</p>
                 </div>
-            `).join('');
+            `;
+        }
 
-            // Click handlers
-            list.querySelectorAll('.node-item').forEach(item => {
-                item.addEventListener('click', () => {
-                    const nodeData = graphData.nodes.find(n => n.id === item.dataset.id);
-                    if (nodeData) {
-                        selectNode(nodeData);
-                        // Center on node
-                        if (nodeData.x && nodeData.y) {
-                            const container = document.getElementById('graph-container');
-                            const transform = d3.zoomIdentity
-                                .translate(container.clientWidth / 2 - nodeData.x, container.clientHeight / 2 - nodeData.y);
-                            svg.transition().duration(750).call(zoom.transform, transform);
-                        }
-                    }
-                });
+        function buildFilters(nodes) {
+            const types = [...new Set(nodes.map(n => n.type))];
+            const container = document.getElementById('type-filters');
+            types.forEach(type => {
+                const chip = document.createElement('span');
+                chip.className = 'chip active';
+                chip.textContent = type;
+                chip.onclick = () => {
+                    chip.classList.toggle('active');
+                    const visibleTypes = Array.from(document.querySelectorAll('.chip.active')).map(c => c.textContent);
+                    cy.nodes().forEach(n => {
+                        n.style('display', visibleTypes.includes(n.data('type')) ? 'element' : 'none');
+                    });
+                };
+                container.appendChild(chip);
             });
         }
 
-        function setupEventListeners() {
-            // Search
-            document.getElementById('search-input').addEventListener('input', (e) => {
-                const query = e.target.value.toLowerCase();
-                const filtered = query
-                    ? graphData.nodes.filter(n =>
-                        n.name.toLowerCase().includes(query) ||
-                        n.id.toLowerCase().includes(query))
-                    : graphData.nodes;
-                updateNodeList(filtered);
-            });
-
-            // Type filters
-            document.getElementById('type-filters').addEventListener('click', (e) => {
-                if (e.target.classList.contains('chip')) {
-                    e.target.classList.toggle('active');
-                    const type = e.target.dataset.type;
-                    if (activeFilters.has(type)) {
-                        activeFilters.delete(type);
-                    } else {
-                        activeFilters.add(type);
-                    }
-                    renderGraph();
-                    updateNodeList(graphData.nodes);
-                }
-            });
-
-            // Close details
-            document.getElementById('details-close').addEventListener('click', () => {
-                document.getElementById('details-panel').classList.remove('visible');
-                node.select('circle').attr('stroke', '#0d1117').attr('stroke-width', 2);
-            });
-
-            // Controls
-            document.getElementById('btn-zoom-in').addEventListener('click', () => {
-                svg.transition().call(zoom.scaleBy, 1.5);
-            });
-            document.getElementById('btn-zoom-out').addEventListener('click', () => {
-                svg.transition().call(zoom.scaleBy, 0.67);
-            });
-            document.getElementById('btn-reset').addEventListener('click', () => {
-                svg.transition().call(zoom.transform, d3.zoomIdentity);
-            });
-            document.getElementById('btn-export').addEventListener('click', () => {
-                const svgData = document.getElementById('graph-svg').outerHTML;
-                const blob = new Blob([svgData], {type: 'image/svg+xml'});
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = 'dede-graph.svg';
-                a.click();
-                URL.revokeObjectURL(url);
-            });
-
-            // Click background to deselect
-            svg.on('click', () => {
-                document.getElementById('details-panel').classList.remove('visible');
-                node.select('circle').attr('stroke', '#0d1117').attr('stroke-width', 2);
-            });
-        }
+        init();
     </script>
 </body>
 </html>

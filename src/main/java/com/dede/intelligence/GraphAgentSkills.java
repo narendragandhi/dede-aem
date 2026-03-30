@@ -80,15 +80,41 @@ public class GraphAgentSkills {
         }
 
         // 6. Detect Zombie Resource Types (Code exists but not in Content)
+        // Only flag resource types that have NO relationships at all (truly orphaned)
         graphService.getAllNodes().stream()
             .filter(n -> n.getType() == NodeType.JCR_RESOURCE_TYPE)
             .filter(res -> !"true".equals(res.getProperties().get("isExported")))
-            .forEach(res -> {
-                boolean hasContent = !graphService.getInboundRelatedNodes(res, RelationshipType.INSTANTIATED_BY).isEmpty();
-                boolean hasHtl = !graphService.getInboundRelatedNodes(res, RelationshipType.REFERENCES).isEmpty();
-                if (!hasContent && !hasHtl) {
-                    suggestions.add("REFACTOR [Zombie Code]: ResourceType '" + res.getName() + "' is defined in code but never instantiated in JCR content or HTL.");
+            .filter(res -> !"true".equals(res.getProperties().get("isProxy"))) // Skip proxy components
+            .filter(res -> {
+                // Skip if this resource type has ANY outgoing relationships (DEFINES HTL, EXTENDS supertype, etc.)
+                Set<CodeNode> outgoing = graphService.getOutgoingNodes(res);
+                if (!outgoing.isEmpty()) return false;
+
+                // Skip if this resource type is REFERENCED by HTL (data-sly-resource) or has incoming edges
+                Set<CodeNode> incoming = graphService.getIncomingNodes(res);
+                if (!incoming.isEmpty()) return false;
+
+                // Skip common AEM patterns that are valid without explicit references
+                String name = res.getName();
+                if (name.contains("_cq_dialog") || name.contains("_cq_design_dialog") ||
+                    name.contains("_cq_editConfig") || name.contains("_cq_template") ||
+                    name.contains("clientlibs") || name.contains("/i18n") ||
+                    name.contains("/new") || // Container "new" placeholders
+                    name.contains("/form/") || // Form components are often unused in simple projects
+                    name.endsWith(".json") || name.endsWith(".dir")) {
+                    return false;
                 }
+
+                // Skip components that extend a supertype (proxy pattern)
+                if (res.getProperties().containsKey("sling:resourceSuperType")) {
+                    return false;
+                }
+
+                return true;
+            })
+            .limit(5) // Limit noise further
+            .forEach(res -> {
+                suggestions.add("REFACTOR [Zombie Code]: ResourceType '" + res.getName() + "' is defined in code but never instantiated in JCR content or HTL.");
             });
 
         return suggestions;

@@ -1091,5 +1091,61 @@
       "severity": "SEVERE",
       "description": "Admin user reference - use dedicated service users instead"
     }
+  ],
+  "dispatcherRules": [
+    {
+      "ruleId": "DISP-001",
+      "name": "Missing filter section",
+      "severity": "CRITICAL",
+      "description": "Dispatcher configuration should have a /filter section to control access"
+    },
+    {
+      "ruleId": "DISP-002",
+      "name": "Missing default deny rule",
+      "severity": "MAJOR",
+      "description": "Filter section should start with a deny-all rule, then selectively allow paths"
+    },
+    {
+      "ruleId": "DISP-003",
+      "name": "Dangerous extension allowed",
+      "severity": "MAJOR",
+      "description": "Extensions like .json, .xml, .infinity should be denied or restricted"
+    },
+    {
+      "ruleId": "DISP-004",
+      "name": "Dangerous selector allowed",
+      "severity": "MAJOR",
+      "description": "Selectors like .feed, .infinity should be denied to prevent data exposure"
+    },
+    {
+      "ruleId": "DISP-005",
+      "name": "Administrative path allowed",
+      "severity": "CRITICAL",
+      "description": "Paths like /crx, /system, /admin should never be exposed through dispatcher"
+    },
+    {
+      "ruleId": "DISP-006",
+      "name": "Overly permissive allow rule",
+      "severity": "MAJOR",
+      "description": "Avoid allow rules that match all URLs - use specific path patterns"
+    },
+    {
+      "ruleId": "DISP-007",
+      "name": "No HTTP method filtering",
+      "severity": "MINOR",
+      "description": "Consider restricting allowed HTTP methods to GET/HEAD for static content"
+    },
+    {
+      "ruleId": "DISP-008",
+      "name": "No query string filtering",
+      "severity": "MINOR",
+      "description": "Add query/suffix filtering to prevent cache poisoning attacks"
+    },
+    {
+      "ruleId": "DISP-009",
+      "name": "Syndication propagation enabled",
+      "severity": "MAJOR",
+      "description": "Syndication propagation should only be enabled for content sync scenarios"
+    }
   ]
 }

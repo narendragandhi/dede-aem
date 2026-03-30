@@ -28,7 +28,26 @@ public class GraphRepository {
         }
     }
 
+    /**
+     * Removes all nodes associated with a specific file path.
+     * Useful for partial re-scanning in incremental mode.
+     */
+    public synchronized void removeNodesByFilePath(String filePath) {
+        if (filePath == null) return;
+        
+        Set<CodeNode> nodesToRemove = graph.vertexSet().stream()
+                .filter(node -> filePath.equals(node.getFilePath()))
+                .collect(Collectors.toSet());
+        
+        graph.removeAllVertices(nodesToRemove);
+    }
+
     public synchronized Relationship addEdge(CodeNode source, CodeNode target, RelationshipType type, int confidence) {
+        // Prevent self-loops - JGraphT DirectedMultigraph doesn't allow them by default
+        if (source.equals(target) || source.getId().equals(target.getId())) {
+            return null;
+        }
+
         addNode(source);
         addNode(target);
 

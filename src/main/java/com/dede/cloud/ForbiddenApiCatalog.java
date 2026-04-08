@@ -197,11 +197,14 @@ public class ForbiddenApiCatalog {
     }
 
     /**
-     * Checks if a method name is forbidden.
+     * Checks if a method name is forbidden (any-class context, no false-positive filtering).
+     * For supply-chain rules that scope methods to specific classes, use
+     * {@link #checkClassScopedMethod(String, String)} instead.
      */
     public Optional<ForbiddenMatch> checkMethod(String methodName) {
         for (ForbiddenCategory category : categories) {
-            if (category.methods().contains(methodName)) {
+            // Only match method-only rules (categories with no class restriction)
+            if (category.methods().contains(methodName) && category.classes().isEmpty()) {
                 return Optional.of(new ForbiddenMatch(
                     category.name(),
                     category.severity(),
@@ -215,16 +218,54 @@ public class ForbiddenApiCatalog {
     }
 
     /**
+     * Checks if a method call is forbidden when called on a specific class.
+     * This is the precise check for supply-chain rules that scope methods to classes,
+     * e.g. "exec" is only forbidden on Runtime/ProcessBuilder, not on arbitrary objects.
+     *
+     * @param callerSimpleName simple class name of the object the method is called on
+     *                         (e.g. "Runtime", "ProcessBuilder", "URLClassLoader")
+     * @param methodName       the method being invoked
+     */
+    public Optional<ForbiddenMatch> checkClassScopedMethod(String callerSimpleName, String methodName) {
+        for (ForbiddenCategory category : categories) {
+            if (!category.methods().contains(methodName) || category.classes().isEmpty()) {
+                continue;
+            }
+            // Check if the caller's simple name or FQN matches any class in this category
+            boolean classMatches = category.classes().stream().anyMatch(fqn -> {
+                String simple = fqn.substring(fqn.lastIndexOf('.') + 1);
+                return simple.equals(callerSimpleName) || fqn.equals(callerSimpleName);
+            });
+            if (classMatches) {
+                return Optional.of(new ForbiddenMatch(
+                    category.name(),
+                    category.severity(),
+                    category.description(),
+                    category.replacement(),
+                    MatchType.CLASS_SCOPED_METHOD
+                ));
+            }
+        }
+        return Optional.empty();
+    }
+
+    /**
      * Checks if a method call on a specific class is forbidden.
      */
     public Optional<ForbiddenMatch> checkMethodCall(String className, String methodName) {
-        // First check if the method is generally forbidden
+        // Try class-scoped method match first (avoids false positives)
+        Optional<ForbiddenMatch> scopedMatch = checkClassScopedMethod(className, methodName);
+        if (scopedMatch.isPresent()) {
+            return scopedMatch;
+        }
+
+        // Fall back to any-class method match (unrestricted methods)
         Optional<ForbiddenMatch> methodMatch = checkMethod(methodName);
         if (methodMatch.isPresent()) {
             return methodMatch;
         }
 
-        // Then check if the class is forbidden (which makes all method calls forbidden)
+        // Then check if the class itself is forbidden (all method calls forbidden)
         return checkClass(className);
     }
 
@@ -342,7 +383,7 @@ public class ForbiddenApiCatalog {
     }
 
     public enum MatchType {
-        EXACT_CLASS, PACKAGE_PATTERN, METHOD
+        EXACT_CLASS, PACKAGE_PATTERN, METHOD, CLASS_SCOPED_METHOD
     }
 
     public record ForbiddenCategory(

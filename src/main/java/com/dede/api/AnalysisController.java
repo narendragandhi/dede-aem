@@ -2,6 +2,8 @@ package com.dede.api;
 
 import com.dede.cloud.BpaReportGenerator;
 import com.dede.cloud.BpaReportGenerator.BpaReport;
+import com.dede.cloud.ForbiddenApiScanner;
+import com.dede.cloud.SupplyChainReport;
 import com.dede.intelligence.CloudReadinessAnalyzer;
 import com.dede.intelligence.CloudReadinessAnalyzer.CloudReadinessReport;
 import io.swagger.v3.oas.annotations.Operation;
@@ -18,6 +20,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.nio.file.Path;
+import java.util.Map;
 
 /**
  * REST API for cloud readiness analysis and BPA-compatible reports.
@@ -31,11 +34,14 @@ public class AnalysisController {
 
     private final CloudReadinessAnalyzer cloudReadinessAnalyzer;
     private final BpaReportGenerator bpaReportGenerator;
+    private final ForbiddenApiScanner forbiddenApiScanner;
 
     public AnalysisController(CloudReadinessAnalyzer cloudReadinessAnalyzer,
-                              BpaReportGenerator bpaReportGenerator) {
+                              BpaReportGenerator bpaReportGenerator,
+                              ForbiddenApiScanner forbiddenApiScanner) {
         this.cloudReadinessAnalyzer = cloudReadinessAnalyzer;
         this.bpaReportGenerator = bpaReportGenerator;
+        this.forbiddenApiScanner = forbiddenApiScanner;
     }
 
     @GetMapping("/cloud-readiness")
@@ -132,6 +138,48 @@ public class AnalysisController {
         return ResponseEntity.ok()
             .header(HttpHeaders.CONTENT_TYPE, "text/plain; charset=UTF-8")
             .body(textReport);
+    }
+
+    @GetMapping("/supply-chain")
+    @Operation(summary = "Supply-chain security scan",
+               description = "Scans the project for supply-chain attack indicators: process spawning, remote classloading, and reflective payload delivery")
+    @ApiResponses(value = {
+        @ApiResponse(responseCode = "200", description = "Scan completed successfully"),
+        @ApiResponse(responseCode = "400", description = "Invalid project path")
+    })
+    public ResponseEntity<Map<String, Object>> getSupplyChainReport(
+            @Parameter(description = "Absolute path to the project root to scan")
+            @RequestParam String projectPath) {
+        log.info("Running supply-chain security scan on: {}", projectPath);
+
+        Path root = Path.of(projectPath);
+        ForbiddenApiScanner.ScanResult scanResult = forbiddenApiScanner.scanProject(root);
+        SupplyChainReport report = new SupplyChainReport(scanResult.violations(), root);
+
+        Map<String, Object> summary = report.toSummary();
+        log.info("Supply-chain scan complete: riskScore={}, findings={}",
+                 report.getRiskScore(), report.getViolations().size());
+        return ResponseEntity.ok(summary);
+    }
+
+    @GetMapping(value = "/supply-chain/markdown", produces = "text/markdown")
+    @Operation(summary = "Supply-chain report (Markdown)",
+               description = "Returns the supply-chain security report as Markdown text")
+    @ApiResponses(value = {
+        @ApiResponse(responseCode = "200", description = "Report generated successfully")
+    })
+    public ResponseEntity<String> getSupplyChainMarkdown(
+            @Parameter(description = "Absolute path to the project root to scan")
+            @RequestParam String projectPath) {
+        log.info("Generating supply-chain Markdown report for: {}", projectPath);
+
+        Path root = Path.of(projectPath);
+        ForbiddenApiScanner.ScanResult scanResult = forbiddenApiScanner.scanProject(root);
+        SupplyChainReport report = new SupplyChainReport(scanResult.violations(), root);
+
+        return ResponseEntity.ok()
+            .header(HttpHeaders.CONTENT_TYPE, "text/markdown; charset=UTF-8")
+            .body(report.toMarkdown());
     }
 
     /**

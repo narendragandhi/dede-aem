@@ -305,6 +305,36 @@
         "org.apache.http.impl.client.CloseableHttpClient"
       ],
       "replacement": "Create HTTPClient at class level and reuse across method calls"
+    },
+    {
+      "name": "SUPPLY_CHAIN_PROCESS_SPAWN",
+      "description": "OS process spawning inside an OSGi bundle is a supply chain attack indicator. AEM bundles have no legitimate reason to fork processes.",
+      "severity": "CRITICAL",
+      "replacement": "Use Sling Jobs (org.apache.sling.event.jobs.JobManager) for async/background work.",
+      "packages": [],
+      "classes": ["java.lang.Runtime", "java.lang.ProcessBuilder"],
+      "methods": ["exec", "start"],
+      "annotations": []
+    },
+    {
+      "name": "SUPPLY_CHAIN_REMOTE_CLASSLOAD",
+      "description": "Loading classes from remote URLs at runtime bypasses OSGi's class-visibility contract and is a classic supply chain backdoor delivery mechanism.",
+      "severity": "CRITICAL",
+      "replacement": "Declare all required packages in OSGi Import-Package. Use @Reference for service lookup.",
+      "packages": [],
+      "classes": ["java.net.URLClassLoader"],
+      "methods": ["loadClass"],
+      "annotations": []
+    },
+    {
+      "name": "SUPPLY_CHAIN_REFLECTION_LOAD",
+      "description": "Class.forName() with a dynamic or encoded class name is used in supply chain attacks to load payloads without static imports. Prefer explicit @Reference injection.",
+      "severity": "HIGH",
+      "replacement": "Use explicit class references or @Reference/@Inject for OSGi/Sling service lookup.",
+      "packages": [],
+      "classes": [],
+      "methods": ["forName"],
+      "annotations": []
     }
   ],
   "sonarQubeRules": [

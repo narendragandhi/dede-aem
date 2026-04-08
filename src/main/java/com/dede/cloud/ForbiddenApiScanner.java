@@ -11,6 +11,7 @@ import com.github.javaparser.ast.ImportDeclaration;
 import com.github.javaparser.ast.expr.MethodCallExpr;
 import com.github.javaparser.ast.expr.AnnotationExpr;
 import com.github.javaparser.ast.body.ClassOrInterfaceDeclaration;
+import com.github.javaparser.ast.body.VariableDeclarator;
 import com.github.javaparser.ast.visitor.VoidVisitorAdapter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -185,18 +186,46 @@ public class ForbiddenApiScanner {
     }
 
     /**
-     * Scans method calls for forbidden patterns like loginAdministrative.
+     * Scans method calls for forbidden patterns like loginAdministrative and supply-chain risks.
+     *
+     * For supply-chain rules (class-scoped methods), the caller's type is resolved from:
+     * 1. Explicit scope: {@code runtime.exec(...)} → scope is "runtime" → look up in import map
+     * 2. Static calls: {@code Runtime.exec(...)} → scope is "Runtime" directly
+     * 3. No scope (unqualified call): treated as any-class method match only
      */
     private List<ForbiddenApiViolation> scanMethodCalls(CompilationUnit cu, String filePath,
                                                          Map<String, String> importMap) {
         List<ForbiddenApiViolation> violations = new ArrayList<>();
 
+        // Build a reverse map: variable name → import type (best-effort, no full symbol solver)
+        Map<String, String> varTypeMap = buildVariableTypeMap(cu, importMap);
+
         cu.findAll(MethodCallExpr.class).forEach(methodCall -> {
             String methodName = methodCall.getNameAsString();
             int line = methodCall.getBegin().map(p -> p.line).orElse(0);
 
-            // Check if method name is forbidden
-            Optional<ForbiddenApiCatalog.ForbiddenMatch> match = catalog.checkMethod(methodName);
+            Optional<ForbiddenApiCatalog.ForbiddenMatch> match = Optional.empty();
+
+            // Try class-scoped check first when there is a scope expression
+            if (methodCall.getScope().isPresent()) {
+                String scopeStr = methodCall.getScope().get().toString();
+                // Resolve: could be a variable name or a class name
+                String resolvedType = varTypeMap.getOrDefault(scopeStr,
+                    importMap.getOrDefault(scopeStr, scopeStr));
+                // Extract simple name for matching
+                String simpleName = resolvedType.substring(resolvedType.lastIndexOf('.') + 1);
+                match = catalog.checkClassScopedMethod(simpleName, methodName);
+                // Also try FQN
+                if (match.isEmpty() && !resolvedType.equals(simpleName)) {
+                    match = catalog.checkClassScopedMethod(resolvedType, methodName);
+                }
+            }
+
+            // Fall back to any-class method check (methods with empty classes list)
+            if (match.isEmpty()) {
+                match = catalog.checkMethod(methodName);
+            }
+
             if (match.isPresent()) {
                 violations.add(new ForbiddenApiViolation(
                     filePath,
@@ -212,6 +241,23 @@ public class ForbiddenApiScanner {
         });
 
         return violations;
+    }
+
+    /**
+     * Best-effort variable-to-type map built from local variable declarations.
+     * Handles patterns like: {@code Runtime rt = Runtime.getRuntime(); rt.exec(...)}
+     */
+    private Map<String, String> buildVariableTypeMap(CompilationUnit cu,
+                                                      Map<String, String> importMap) {
+        Map<String, String> varTypeMap = new HashMap<>();
+        cu.findAll(com.github.javaparser.ast.body.VariableDeclarator.class).forEach(vd -> {
+            String varName = vd.getNameAsString();
+            String typeStr = vd.getTypeAsString();
+            // Resolve to FQN if possible via import map
+            String resolved = importMap.getOrDefault(typeStr, typeStr);
+            varTypeMap.put(varName, resolved);
+        });
+        return varTypeMap;
     }
 
     /**

@@ -3,6 +3,7 @@ package com.dede.api;
 import com.dede.cloud.BpaReportGenerator;
 import com.dede.cloud.BpaReportGenerator.BpaReport;
 import com.dede.cloud.ForbiddenApiScanner;
+import com.dede.cloud.SarifReport;
 import com.dede.cloud.SupplyChainReport;
 import com.dede.intelligence.CloudReadinessAnalyzer;
 import com.dede.intelligence.CloudReadinessAnalyzer.CloudReadinessReport;
@@ -160,6 +161,26 @@ public class AnalysisController {
         log.info("Supply-chain scan complete: riskScore={}, findings={}",
                  report.getRiskScore(), report.getViolations().size());
         return ResponseEntity.ok(summary);
+    }
+
+    @GetMapping(value = "/supply-chain/sarif", produces = MediaType.APPLICATION_JSON_VALUE)
+    @Operation(summary = "Supply-chain report (SARIF 2.1.0)",
+               description = "Returns findings as SARIF 2.1.0 for GitHub Code Scanning, VS Code, and SIEMs")
+    @ApiResponses(value = {
+        @ApiResponse(responseCode = "200", description = "SARIF report generated successfully")
+    })
+    public ResponseEntity<Map<String, Object>> getSupplyChainSarif(
+            @Parameter(description = "Absolute path to the project root to scan")
+            @RequestParam String projectPath) {
+        log.info("Generating SARIF supply-chain report for: {}", projectPath);
+
+        Path root = Path.of(projectPath);
+        ForbiddenApiScanner.ScanResult scanResult = forbiddenApiScanner.scanProject(root);
+        SarifReport sarif = new SarifReport(scanResult.violations(), root);
+
+        return ResponseEntity.ok()
+            .header(HttpHeaders.CONTENT_TYPE, "application/sarif+json")
+            .body(sarif.toSarif());
     }
 
     @GetMapping(value = "/supply-chain/markdown", produces = "text/markdown")

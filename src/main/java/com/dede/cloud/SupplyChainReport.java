@@ -47,17 +47,19 @@ public class SupplyChainReport {
     }
 
     /**
-     * 0 = clean, 100 = maximum risk.
-     * Scoring: CRITICAL=30 pts each (cap 90), HIGH=10 pts each (cap 30), total capped at 100.
+     * Severity-weighted risk score in range [0, 100].
+     *
+     * Weights: CRITICAL=20, HIGH=5, MEDIUM=1.
+     * No per-severity cap — every additional finding increases the score until saturation at 100,
+     * preserving signal across the full range (4 CRITICAL findings score higher than 3).
      */
     public int getRiskScore() {
-        int criticalCount = (int) violations.stream()
-            .filter(v -> v.severity() == ForbiddenApiCatalog.Severity.CRITICAL)
-            .count();
-        int highCount = (int) violations.stream()
-            .filter(v -> v.severity() == ForbiddenApiCatalog.Severity.HIGH)
-            .count();
-        int score = Math.min(criticalCount * 30, 90) + Math.min(highCount * 10, 30);
+        int score = violations.stream().mapToInt(v -> switch (v.severity()) {
+            case CRITICAL -> 20;
+            case HIGH     -> 5;
+            case MEDIUM   -> 1;
+            default       -> 0;
+        }).sum();
         return Math.min(score, 100);
     }
 

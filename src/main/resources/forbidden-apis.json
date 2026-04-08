@@ -68,7 +68,9 @@
       "classes": [
         "org.apache.sling.jcr.api.SlingRepository"
       ],
-      "replacement": "Use service users with ServiceUserMapped interface"
+      "replacement": "Use service users with ServiceUserMapped interface",
+      "cweId": "CWE-250",
+      "cweName": "Execution with Unnecessary Privileges"
     },
     {
       "name": "DEPRECATED_QUERY",
@@ -141,7 +143,9 @@
       "classes": [
         "org.apache.jackrabbit.api.security.authentication.token.TokenCredentials"
       ],
-      "replacement": "Use IMS authentication and service users"
+      "replacement": "Use IMS authentication and service users",
+      "cweId": "CWE-250",
+      "cweName": "Execution with Unnecessary Privileges"
     },
     {
       "name": "DEPRECATED_SOCIAL",
@@ -312,9 +316,18 @@
       "severity": "CRITICAL",
       "replacement": "Use Sling Jobs (org.apache.sling.event.jobs.JobManager) for async/background work.",
       "packages": [],
-      "classes": ["java.lang.Runtime", "java.lang.ProcessBuilder"],
-      "methods": ["exec", "start"],
-      "annotations": []
+      "classes": [
+        "java.lang.Runtime",
+        "java.lang.ProcessBuilder"
+      ],
+      "methods": [
+        "exec",
+        "start"
+      ],
+      "annotations": [],
+      "requiresClassContext": true,
+      "cweId": "CWE-78",
+      "cweName": "OS Command Injection"
     },
     {
       "name": "SUPPLY_CHAIN_REMOTE_CLASSLOAD",
@@ -322,9 +335,16 @@
       "severity": "CRITICAL",
       "replacement": "Declare all required packages in OSGi Import-Package. Use @Reference for service lookup.",
       "packages": [],
-      "classes": ["java.net.URLClassLoader"],
-      "methods": ["loadClass"],
-      "annotations": []
+      "classes": [
+        "java.net.URLClassLoader"
+      ],
+      "methods": [
+        "loadClass"
+      ],
+      "annotations": [],
+      "requiresClassContext": true,
+      "cweId": "CWE-470",
+      "cweName": "Use of Externally-Controlled Input to Select Classes (Unsafe Reflection)"
     },
     {
       "name": "SUPPLY_CHAIN_REFLECTION_LOAD",
@@ -333,8 +353,13 @@
       "replacement": "Use explicit class references or @Reference/@Inject for OSGi/Sling service lookup.",
       "packages": [],
       "classes": [],
-      "methods": ["forName"],
-      "annotations": []
+      "methods": [
+        "forName"
+      ],
+      "annotations": [],
+      "requiresClassContext": false,
+      "cweId": "CWE-470",
+      "cweName": "Use of Externally-Controlled Input to Select Classes (Unsafe Reflection)"
     }
   ],
   "sonarQubeRules": [

@@ -35,12 +35,15 @@ public class ForbiddenApiScanner {
 
     private final GraphService graphService;
     private final ForbiddenApiCatalog catalog;
-    private final JavaParser javaParser;
 
     public ForbiddenApiScanner(GraphService graphService, ForbiddenApiCatalog catalog) {
         this.graphService = graphService;
         this.catalog = catalog;
-        this.javaParser = new JavaParser();
+    }
+
+    /** Create a new JavaParser per call — JavaParser is not thread-safe. */
+    private JavaParser newParser() {
+        return new JavaParser();
     }
 
     /**
@@ -76,7 +79,7 @@ public class ForbiddenApiScanner {
 
         try {
             String source = Files.readString(javaFile);
-            ParseResult<CompilationUnit> parseResult = javaParser.parse(source);
+            ParseResult<CompilationUnit> parseResult = newParser().parse(source);
 
             if (!parseResult.isSuccessful() || parseResult.getResult().isEmpty()) {
                 log.debug("Failed to parse {}", javaFile);
@@ -135,15 +138,11 @@ public class ForbiddenApiScanner {
             // Check if this import is forbidden
             Optional<ForbiddenApiCatalog.ForbiddenMatch> match = catalog.checkClass(importName);
             if (match.isPresent()) {
+                var m = match.get();
                 violations.add(new ForbiddenApiViolation(
-                    filePath,
-                    line,
-                    ViolationType.FORBIDDEN_IMPORT,
-                    importName,
-                    match.get().categoryName(),
-                    match.get().severity(),
-                    match.get().description(),
-                    match.get().replacement()
+                    filePath, line, ViolationType.FORBIDDEN_IMPORT,
+                    importName, m.categoryName(), m.severity(),
+                    m.description(), m.replacement(), m.cweId(), m.cweName()
                 ));
             }
         }
@@ -224,18 +223,20 @@ public class ForbiddenApiScanner {
             // Fall back to any-class method check (methods with empty classes list)
             if (match.isEmpty()) {
                 match = catalog.checkMethod(methodName);
+                // For forName: only flag when the argument is dynamic (not a string literal).
+                // Class.forName("com.example.Foo") is safe; Class.forName(className) is not.
+                if (match.isPresent() && "forName".equals(methodName)
+                        && isForNameArgumentLiteral(methodCall)) {
+                    match = Optional.empty();
+                }
             }
 
             if (match.isPresent()) {
+                var m = match.get();
                 violations.add(new ForbiddenApiViolation(
-                    filePath,
-                    line,
-                    ViolationType.FORBIDDEN_METHOD_CALL,
-                    methodName,
-                    match.get().categoryName(),
-                    match.get().severity(),
-                    match.get().description(),
-                    match.get().replacement()
+                    filePath, line, ViolationType.FORBIDDEN_METHOD_CALL,
+                    methodName, m.categoryName(), m.severity(),
+                    m.description(), m.replacement(), m.cweId(), m.cweName()
                 ));
             }
         });
@@ -244,20 +245,83 @@ public class ForbiddenApiScanner {
     }
 
     /**
-     * Best-effort variable-to-type map built from local variable declarations.
-     * Handles patterns like: {@code Runtime rt = Runtime.getRuntime(); rt.exec(...)}
+     * Returns true if the first argument to a {@code Class.forName()} call is a string literal
+     * (i.e. a hardcoded class name — safe, no taint risk).
+     * Returns false if the argument is a variable, expression, or concatenation (dynamic — risky).
+     */
+    private boolean isForNameArgumentLiteral(MethodCallExpr methodCall) {
+        if (methodCall.getArguments().isEmpty()) return false;
+        // StringLiteralExpr covers plain "com.example.Foo" arguments
+        return methodCall.getArgument(0) instanceof
+            com.github.javaparser.ast.expr.StringLiteralExpr;
+    }
+
+    /**
+     * Best-effort variable-to-type map covering three binding sites:
+     *
+     * 1. Local variable declarations — {@code Runtime rt = Runtime.getRuntime();}
+     * 2. Class field declarations    — {@code private Runtime runtime = ...;}
+     * 3. Method parameters           — {@code void activate(ProcessBuilder pb)}
+     *
+     * For {@code var} inference, inspects the initializer's expression type when possible.
+     *
+     * All type names are resolved to FQN via the import map where available.
      */
     private Map<String, String> buildVariableTypeMap(CompilationUnit cu,
                                                       Map<String, String> importMap) {
         Map<String, String> varTypeMap = new HashMap<>();
-        cu.findAll(com.github.javaparser.ast.body.VariableDeclarator.class).forEach(vd -> {
+
+        // 1 & 2: VariableDeclarator covers both locals and fields
+        cu.findAll(VariableDeclarator.class).forEach(vd -> {
             String varName = vd.getNameAsString();
             String typeStr = vd.getTypeAsString();
-            // Resolve to FQN if possible via import map
-            String resolved = importMap.getOrDefault(typeStr, typeStr);
-            varTypeMap.put(varName, resolved);
+
+            if ("var".equals(typeStr)) {
+                // For 'var', try to infer from the initializer's expression
+                vd.getInitializer().ifPresent(init -> {
+                    String inferred = inferTypeFromExpr(init, importMap);
+                    if (inferred != null) varTypeMap.put(varName, inferred);
+                });
+            } else {
+                varTypeMap.put(varName, importMap.getOrDefault(typeStr, typeStr));
+            }
         });
+
+        // 3: Method parameters (e.g. void doSomething(Runtime rt) { rt.exec(...) })
+        cu.findAll(com.github.javaparser.ast.body.Parameter.class).forEach(param -> {
+            String paramName = param.getNameAsString();
+            String typeStr   = param.getTypeAsString();
+            varTypeMap.putIfAbsent(paramName, importMap.getOrDefault(typeStr, typeStr));
+        });
+
         return varTypeMap;
+    }
+
+    /**
+     * Infers the type of a {@code var} initializer from common expression patterns.
+     * Returns the simple class name when recognisable, null otherwise.
+     *
+     * Handles: {@code new ProcessBuilder(...)} → "ProcessBuilder"
+     *          {@code Runtime.getRuntime()}     → "Runtime"  (scope of call)
+     *          {@code (Runtime) someExpr}       → "Runtime"  (cast)
+     */
+    private String inferTypeFromExpr(com.github.javaparser.ast.expr.Expression init,
+                                      Map<String, String> importMap) {
+        if (init instanceof com.github.javaparser.ast.expr.ObjectCreationExpr oce) {
+            String typeName = oce.getType().getNameAsString();
+            return importMap.getOrDefault(typeName, typeName);
+        }
+        if (init instanceof com.github.javaparser.ast.expr.MethodCallExpr mce
+                && mce.getScope().isPresent()) {
+            // e.g. Runtime.getRuntime() — scope "Runtime" is the class
+            String scope = mce.getScope().get().toString();
+            return importMap.getOrDefault(scope, scope);
+        }
+        if (init instanceof com.github.javaparser.ast.expr.CastExpr ce) {
+            String typeName = ce.getType().asString();
+            return importMap.getOrDefault(typeName, typeName);
+        }
+        return null;
     }
 
     /**
@@ -332,7 +396,7 @@ public class ForbiddenApiScanner {
                  .forEach(javaFile -> {
                      try {
                          String source = Files.readString(javaFile);
-                         ParseResult<CompilationUnit> parseResult = javaParser.parse(source);
+                         ParseResult<CompilationUnit> parseResult = newParser().parse(source);
 
                          if (parseResult.isSuccessful() && parseResult.getResult().isPresent()) {
                              CompilationUnit cu = parseResult.getResult().get();
@@ -409,8 +473,22 @@ public class ForbiddenApiScanner {
         String category,
         ForbiddenApiCatalog.Severity severity,
         String description,
-        String replacement
-    ) {}
+        String replacement,
+        String cweId,    // e.g. "CWE-78", null if not mapped
+        String cweName
+    ) {
+        /** Convenience constructor for callers that don't supply CWE (e.g. deprecated annotations). */
+        public ForbiddenApiViolation(String filePath, int line, ViolationType type, String target,
+                                     String category, ForbiddenApiCatalog.Severity severity,
+                                     String description, String replacement) {
+            this(filePath, line, type, target, category, severity, description, replacement, null, null);
+        }
+
+        public String cweUrl() {
+            if (cweId == null) return null;
+            return "https://cwe.mitre.org/data/definitions/" + cweId.replace("CWE-", "") + ".html";
+        }
+    }
 
     public record AdminSessionViolation(
         String filePath,

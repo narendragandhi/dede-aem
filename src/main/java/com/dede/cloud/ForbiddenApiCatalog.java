@@ -141,14 +141,19 @@ public class ForbiddenApiCatalog {
         String description = node.get("description").asText();
         Severity severity = Severity.valueOf(node.get("severity").asText());
         String replacement = node.has("replacement") ? node.get("replacement").asText() : null;
+        boolean requiresClassContext = node.has("requiresClassContext")
+            && node.get("requiresClassContext").asBoolean(false);
 
         List<String> packages = parseStringArray(node.get("packages"));
         List<String> classes = parseStringArray(node.get("classes"));
         List<String> methods = parseStringArray(node.get("methods"));
         List<String> annotations = parseStringArray(node.get("annotations"));
 
+        String cweId   = node.has("cweId")   ? node.get("cweId").asText(null)   : null;
+        String cweName = node.has("cweName") ? node.get("cweName").asText(null) : null;
+
         return new ForbiddenCategory(name, description, severity, replacement,
-            packages, classes, methods, annotations);
+            packages, classes, methods, annotations, requiresClassContext, cweId, cweName);
     }
 
     private List<String> parseStringArray(JsonNode arrayNode) {
@@ -171,11 +176,9 @@ public class ForbiddenApiCatalog {
             // Check exact class match
             if (category.classes().contains(fullyQualifiedClassName)) {
                 return Optional.of(new ForbiddenMatch(
-                    category.name(),
-                    category.severity(),
-                    category.description(),
-                    category.replacement(),
-                    MatchType.EXACT_CLASS
+                    category.name(), category.severity(), category.description(),
+                    category.replacement(), MatchType.EXACT_CLASS,
+                    category.cweId(), category.cweName()
                 ));
             }
 
@@ -184,11 +187,9 @@ public class ForbiddenApiCatalog {
                 Pattern pattern = packagePatterns.get(packagePattern);
                 if (pattern != null && pattern.matcher(fullyQualifiedClassName).matches()) {
                     return Optional.of(new ForbiddenMatch(
-                        category.name(),
-                        category.severity(),
-                        category.description(),
-                        category.replacement(),
-                        MatchType.PACKAGE_PATTERN
+                        category.name(), category.severity(), category.description(),
+                        category.replacement(), MatchType.PACKAGE_PATTERN,
+                        category.cweId(), category.cweName()
                     ));
                 }
             }
@@ -203,14 +204,12 @@ public class ForbiddenApiCatalog {
      */
     public Optional<ForbiddenMatch> checkMethod(String methodName) {
         for (ForbiddenCategory category : categories) {
-            // Only match method-only rules (categories with no class restriction)
-            if (category.methods().contains(methodName) && category.classes().isEmpty()) {
+            // Skip rules that require a specific caller class — use checkClassScopedMethod() for those
+            if (category.methods().contains(methodName) && !category.requiresClassContext()) {
                 return Optional.of(new ForbiddenMatch(
-                    category.name(),
-                    category.severity(),
-                    category.description(),
-                    category.replacement(),
-                    MatchType.METHOD
+                    category.name(), category.severity(), category.description(),
+                    category.replacement(), MatchType.METHOD,
+                    category.cweId(), category.cweName()
                 ));
             }
         }
@@ -228,7 +227,7 @@ public class ForbiddenApiCatalog {
      */
     public Optional<ForbiddenMatch> checkClassScopedMethod(String callerSimpleName, String methodName) {
         for (ForbiddenCategory category : categories) {
-            if (!category.methods().contains(methodName) || category.classes().isEmpty()) {
+            if (!category.methods().contains(methodName) || !category.requiresClassContext()) {
                 continue;
             }
             // Check if the caller's simple name or FQN matches any class in this category
@@ -238,11 +237,9 @@ public class ForbiddenApiCatalog {
             });
             if (classMatches) {
                 return Optional.of(new ForbiddenMatch(
-                    category.name(),
-                    category.severity(),
-                    category.description(),
-                    category.replacement(),
-                    MatchType.CLASS_SCOPED_METHOD
+                    category.name(), category.severity(), category.description(),
+                    category.replacement(), MatchType.CLASS_SCOPED_METHOD,
+                    category.cweId(), category.cweName()
                 ));
             }
         }
@@ -394,16 +391,33 @@ public class ForbiddenApiCatalog {
         List<String> packages,
         List<String> classes,
         List<String> methods,
-        List<String> annotations
-    ) {}
+        List<String> annotations,
+        boolean requiresClassContext,
+        String cweId,      // e.g. "CWE-78", null if not mapped
+        String cweName
+    ) {
+        public String cweUrl() {
+            if (cweId == null) return null;
+            String id = cweId.replace("CWE-", "");
+            return "https://cwe.mitre.org/data/definitions/" + id + ".html";
+        }
+    }
 
     public record ForbiddenMatch(
         String categoryName,
         Severity severity,
         String description,
         String replacement,
-        MatchType matchType
-    ) {}
+        MatchType matchType,
+        String cweId,
+        String cweName
+    ) {
+        public String cweUrl() {
+            if (cweId == null) return null;
+            String id = cweId.replace("CWE-", "");
+            return "https://cwe.mitre.org/data/definitions/" + id + ".html";
+        }
+    }
 
     public record LegacyPath(
         String path,

@@ -115,6 +115,64 @@ class SupplyChainDetectionTest {
         }
 
         @Test
+        void detectsRuntimeExecOnClassField() throws IOException {
+            Path javaFile = tempDir.resolve("FieldEvil.java");
+            Files.writeString(javaFile, """
+                package com.example;
+                public class FieldEvil {
+                    private Runtime runtime = Runtime.getRuntime();
+                    public void run() throws Exception {
+                        runtime.exec("malicious");
+                    }
+                }
+                """);
+
+            List<ForbiddenApiScanner.ForbiddenApiViolation> violations = scanner.scanJavaFile(javaFile);
+            assertThat(violations)
+                .extracting(ForbiddenApiScanner.ForbiddenApiViolation::category)
+                .contains("SUPPLY_CHAIN_PROCESS_SPAWN");
+        }
+
+        @Test
+        void detectsProcessBuilderViaVarInference() throws IOException {
+            Path javaFile = tempDir.resolve("VarEvil.java");
+            Files.writeString(javaFile, """
+                package com.example;
+                public class VarEvil {
+                    public void run() throws Exception {
+                        var pb = new ProcessBuilder("bash", "-c", "id");
+                        pb.start();
+                    }
+                }
+                """);
+
+            List<ForbiddenApiScanner.ForbiddenApiViolation> violations = scanner.scanJavaFile(javaFile);
+            assertThat(violations)
+                .extracting(ForbiddenApiScanner.ForbiddenApiViolation::category)
+                .contains("SUPPLY_CHAIN_PROCESS_SPAWN");
+        }
+
+        @Test
+        void doesNotFlagStaticForNameWithLiteralArgument() throws IOException {
+            Path javaFile = tempDir.resolve("SafeReflect.java");
+            Files.writeString(javaFile, """
+                package com.example;
+                public class SafeReflect {
+                    public void load() throws Exception {
+                        // hardcoded class name — safe
+                        Class<?> c = Class.forName("com.example.MyPlugin");
+                    }
+                }
+                """);
+
+            List<ForbiddenApiScanner.ForbiddenApiViolation> violations = scanner.scanJavaFile(javaFile);
+            long reflectViolations = violations.stream()
+                .filter(v -> "SUPPLY_CHAIN_REFLECTION_LOAD".equals(v.category()))
+                .count();
+            assertThat(reflectViolations).isZero();
+        }
+
+        @Test
         void doesNotFlagExecOnUnrelatedObject() throws IOException {
             Path javaFile = tempDir.resolve("SafeBundle.java");
             Files.writeString(javaFile, """
@@ -215,10 +273,18 @@ class SupplyChainDetectionTest {
         }
 
         @Test
-        void singleCriticalViolationScores30() {
+        void singleCriticalViolationScores20() {
             SupplyChainReport report = new SupplyChainReport(makeViolations(1, 0), projectRoot);
-            assertThat(report.getRiskScore()).isEqualTo(30);
+            assertThat(report.getRiskScore()).isEqualTo(20);
             assertThat(report.isCritical()).isTrue();
+        }
+
+        @Test
+        void fourCriticalScoresHigherThanThree() {
+            // New formula preserves signal — no per-severity cap
+            int three = new SupplyChainReport(makeViolations(3, 0), projectRoot).getRiskScore();
+            int four  = new SupplyChainReport(makeViolations(4, 0), projectRoot).getRiskScore();
+            assertThat(four).isGreaterThan(three);
         }
 
         @Test
@@ -248,6 +314,29 @@ class SupplyChainDetectionTest {
             Map<String, Object> summary = report.toSummary();
             assertThat(summary).containsKeys("riskScore", "critical", "totalFindings", "categories", "findings");
             assertThat(summary.get("totalFindings")).isEqualTo(2);
+        }
+
+        @Test
+        void cweIdIsPopulatedOnSupplyChainViolation() {
+            // The catalog should propagate CWE-78 for SUPPLY_CHAIN_PROCESS_SPAWN
+            var match = catalog.checkClassScopedMethod("Runtime", "exec");
+            assertThat(match).isPresent();
+            assertThat(match.get().cweId()).isEqualTo("CWE-78");
+            assertThat(match.get().cweUrl()).contains("cwe.mitre.org");
+        }
+
+        @Test
+        void sarifDocumentHasRequiredTopLevelKeys() {
+            SupplyChainReport report = new SupplyChainReport(makeViolations(1, 0), projectRoot);
+            SarifReport sarif = new SarifReport(report.getViolations(), projectRoot);
+            Map<String, Object> doc = sarif.toSarif();
+            assertThat(doc).containsKeys("$schema", "version", "runs");
+            assertThat(doc.get("version")).isEqualTo("2.1.0");
+
+            @SuppressWarnings("unchecked")
+            var runs = (java.util.List<Map<String, Object>>) doc.get("runs");
+            assertThat(runs).hasSize(1);
+            assertThat(runs.get(0)).containsKeys("tool", "results");
         }
 
         @Test

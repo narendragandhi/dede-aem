@@ -1,0 +1,87 @@
+version: "1.0"
+name: "Dede-Java - GasTown"
+
+project:
+  name: dede-java
+  description: "Architectural Intelligence Engine for AEM/OSGi static analysis"
+  domain: aem-arch-analysis
+
+agents:
+  mayor:
+    name: "Mayor AI"
+    description: "Central orchestrator for dede-java workflows"
+    capabilities:
+      - task_decomposition
+      - agent_assignment
+      - progress_monitoring
+      - dependency_management
+
+  coder:
+    name: "Dede Coder"
+    description: "Java/Spring Boot developer for dede-java features"
+    capabilities:
+      - java_services
+      - spring_boot
+      - osgi_analysis
+      - maven
+      - static_analysis
+    tools: [maven, git, javac]
+
+  tester:
+    name: "Dede Test Writer"
+    description: "JUnit5 test specialist for dede-java"
+    capabilities:
+      - junit5
+      - mockito
+      - spring_test
+      - jacoco
+    tools: [maven, junit5, mockito]
+
+  reviewer:
+    name: "Dede Code Reviewer"
+    description: "Code quality and security reviewer"
+    capabilities:
+      - code_quality
+      - security_review
+      - java_patterns
+      - api_design
+
+  docs:
+    name: "Dede Docs"
+    description: "Specification writer and documentation maintainer"
+    capabilities:
+      - specification
+      - api_docs
+      - readme
+      - changelog
+
+workflows:
+  active:
+    - name: supply-chain-security
+      epic: SC-000
+      beads: [SC-001, SC-002, SC-003, SC-004, SC-005]
+      dependency_order:
+        SC-001: []
+        SC-002: [SC-001]
+        SC-003: [SC-001]
+        SC-004: [SC-003]
+        SC-005: [SC-003, SC-004]
+
+bead:
+  issues_dir: bead/.issues
+  agent_dirs: [coder, tester, reviewer, docs]
+  statuses: [pending, in_progress, blocked, completed, cancelled]
+  priorities: [critical, high, medium, low]
+
+quality_gates:
+  compilation:
+    required: true
+    command: "mvn compile -q"
+  unit_tests:
+    required: true
+    command: "mvn test"
+    baseline: "116 tests passing"
+  coverage:
+    threshold: 80
+    required: true
+    command: "mvn test jacoco:report"

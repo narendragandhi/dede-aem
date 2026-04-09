@@ -1,5 +1,7 @@
 package com.dede.osgi;
 
+import com.dede.discovery.OsgiLinker;
+import com.dede.osgi.ComponentStateTracker;
 import com.dede.domain.GraphAnalyzer;
 import com.dede.domain.GraphExporter;
 import com.dede.domain.GraphRepository;
@@ -112,7 +114,8 @@ class OsgiServiceResolutionTest {
         void setUp() {
             GraphRepository repo = new GraphRepository();
             graphService = new GraphService(repo, new GraphAnalyzer(repo), new GraphExporter(repo));
-            validator = new ReferenceValidator(graphService, new LdapFilterParser());
+            OsgiLinker linker = new OsgiLinker(graphService);
+            validator = new ReferenceValidator(graphService, new LdapFilterParser(), linker);
         }
 
         /** Adds a component + service interface + CONSUMES edge to graph. */
@@ -195,6 +198,178 @@ class OsgiServiceResolutionTest {
             assertThat(violations.get(0).message())
                 .contains("ComponentX")
                 .contains("ServiceY");
+        }
+
+        // --- Bead 2.2: Service Ranking Resolution ---
+
+        @Test
+        void highestRankedProviderResolvesAmbiguity() {
+            CodeNode comp      = addComponent("comp:C",    "Consumer");
+            CodeNode svc       = addService("svc:S",       "SharedSvc");
+            CodeNode lowRank   = addComponent("comp:Low",  "LowRankProvider");
+            CodeNode highRank  = addComponent("comp:High", "HighRankProvider");
+
+            lowRank.getProperties().put("service.ranking",  "0");
+            highRank.getProperties().put("service.ranking", "100");
+
+            consumes(comp, svc);
+            provides(lowRank,  svc);
+            provides(highRank, svc);
+
+            // With a clear ranking winner, no AMBIGUOUS violation should be raised
+            assertThat(validator.validate())
+                .extracting(ReferenceValidator.ReferenceViolation::type)
+                .doesNotContain(ReferenceValidator.ViolationType.AMBIGUOUS_REFERENCE);
+        }
+
+        @Test
+        void tiedRankingStillRaisesAmbiguousViolation() {
+            CodeNode comp  = addComponent("comp:C2",   "Consumer2");
+            CodeNode svc   = addService("svc:S2",      "TiedSvc");
+            CodeNode provA = addComponent("comp:PA",   "ProviderA");
+            CodeNode provB = addComponent("comp:PB",   "ProviderB");
+
+            // Same ranking AND same service.id → genuinely ambiguous
+            provA.getProperties().put("service.ranking", "50");
+            provA.getProperties().put("service.id",      "10");
+            provB.getProperties().put("service.ranking", "50");
+            provB.getProperties().put("service.id",      "10");
+
+            consumes(comp, svc);
+            provides(provA, svc);
+            provides(provB, svc);
+
+            assertThat(validator.validate())
+                .extracting(ReferenceValidator.ReferenceViolation::type)
+                .contains(ReferenceValidator.ViolationType.AMBIGUOUS_REFERENCE);
+        }
+
+        @Test
+        void resolveByRankingPicksHighest() {
+            GraphRepository repo2 = new GraphRepository();
+            GraphService gs2 = new GraphService(repo2, new GraphAnalyzer(repo2), new GraphExporter(repo2));
+            OsgiLinker linker2 = new OsgiLinker(gs2);
+
+            CodeNode a = new CodeNode("a", "A", NodeType.OSGI_COMPONENT, "A", null);
+            CodeNode b = new CodeNode("b", "B", NodeType.OSGI_COMPONENT, "B", null);
+            CodeNode c = new CodeNode("c", "C", NodeType.OSGI_COMPONENT, "C", null);
+            a.getProperties().put("service.ranking", "10");
+            b.getProperties().put("service.ranking", "200");
+            c.getProperties().put("service.ranking", "50");
+
+            var result = linker2.resolveByRanking(List.of(a, b, c));
+            assertThat(result).isPresent();
+            assertThat(result.get().provider().getName()).isEqualTo("B");
+            assertThat(result.get().ranking()).isEqualTo(200);
+        }
+
+        @Test
+        void resolveByRankingTieUsesServiceId() {
+            GraphRepository repo2 = new GraphRepository();
+            GraphService gs2 = new GraphService(repo2, new GraphAnalyzer(repo2), new GraphExporter(repo2));
+            OsgiLinker linker2 = new OsgiLinker(gs2);
+
+            CodeNode a = new CodeNode("a", "A", NodeType.OSGI_COMPONENT, "A", null);
+            CodeNode b = new CodeNode("b", "B", NodeType.OSGI_COMPONENT, "B", null);
+            a.getProperties().put("service.ranking", "0");
+            b.getProperties().put("service.ranking", "0");
+            a.getProperties().put("service.id", "5");   // lower id wins
+            b.getProperties().put("service.id", "10");
+
+            var result = linker2.resolveByRanking(List.of(a, b));
+            assertThat(result).isPresent();
+            assertThat(result.get().provider().getName()).isEqualTo("A");
+        }
+
+        @Test
+        void resolveByRankingEmptyListReturnsEmpty() {
+            GraphRepository repo2 = new GraphRepository();
+            GraphService gs2 = new GraphService(repo2, new GraphAnalyzer(repo2), new GraphExporter(repo2));
+            OsgiLinker linker2 = new OsgiLinker(gs2);
+            assertThat(linker2.resolveByRanking(List.of())).isEmpty();
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Bead 2.4: ComponentStateTracker
+    // -----------------------------------------------------------------------
+    @Nested
+    class ComponentStateTrackerTests {
+
+        private GraphService graphService;
+        private ReferenceValidator validator;
+        private ComponentStateTracker tracker;
+
+        @BeforeEach
+        void setUp() {
+            GraphRepository repo = new GraphRepository();
+            graphService = new GraphService(repo, new GraphAnalyzer(repo), new GraphExporter(repo));
+            OsgiLinker linker = new OsgiLinker(graphService);
+            validator = new ReferenceValidator(graphService, new LdapFilterParser(), linker);
+            tracker = new ComponentStateTracker(validator);
+        }
+
+        private CodeNode addComponent(String id, String name) {
+            CodeNode node = new CodeNode(id, name, NodeType.OSGI_COMPONENT, name, null);
+            graphService.addNode(node);
+            return node;
+        }
+
+        private CodeNode addService(String id, String name) {
+            CodeNode node = new CodeNode(id, name, NodeType.OSGI_SERVICE, name, null);
+            graphService.addNode(node);
+            return node;
+        }
+
+        @Test
+        void satisfiedComponentIsActive() {
+            CodeNode comp     = addComponent("comp:A", "ComponentA");
+            CodeNode svc      = addService("svc:S",   "ServiceS");
+            CodeNode provider = addComponent("comp:P", "Provider");
+            graphService.addEdge(comp, svc, RelationshipType.CONSUMES);
+            graphService.addEdge(provider, svc, RelationshipType.PROVIDES);
+
+            var states = tracker.computeStates();
+            assertThat(states.get(comp.getId())).isEqualTo(ComponentStateTracker.ComponentState.ACTIVE);
+        }
+
+        @Test
+        void unsatisfiedComponentIsDetected() {
+            CodeNode comp = addComponent("comp:B", "ComponentB");
+            CodeNode svc  = addService("svc:M",   "Missing");
+            graphService.addEdge(comp, svc, RelationshipType.CONSUMES);
+
+            var states = tracker.computeStates();
+            assertThat(states.get(comp.getId())).isEqualTo(ComponentStateTracker.ComponentState.UNSATISFIED);
+        }
+
+        @Test
+        void componentWithNoReferencesIsActive() {
+            CodeNode comp = addComponent("comp:NoRefs", "Standalone");
+            var states = tracker.computeStates();
+            assertThat(states.get(comp.getId())).isEqualTo(ComponentStateTracker.ComponentState.ACTIVE);
+        }
+
+        @Test
+        void emptyGraphReturnsEmptyStates() {
+            assertThat(tracker.computeStates()).isEmpty();
+        }
+
+        @Test
+        void summaryReflectsCorrectCounts() {
+            CodeNode comp1    = addComponent("comp:1", "Good");
+            CodeNode comp2    = addComponent("comp:2", "Bad");
+            CodeNode svc1     = addService("svc:1",   "SvcOk");
+            CodeNode svc2     = addService("svc:2",   "SvcMissing");
+            CodeNode provider = addComponent("comp:P", "Provider");
+
+            graphService.addEdge(comp1, svc1, RelationshipType.CONSUMES);
+            graphService.addEdge(provider, svc1, RelationshipType.PROVIDES);
+            graphService.addEdge(comp2, svc2, RelationshipType.CONSUMES);
+
+            var summary = tracker.summarize();
+            assertThat(summary.active()).isGreaterThanOrEqualTo(2); // comp1 + provider
+            assertThat(summary.unsatisfied()).isEqualTo(1);
         }
     }
 }

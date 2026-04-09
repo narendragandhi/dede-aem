@@ -37,5 +37,9 @@ public enum RelationshipType {
     INJECTS_CHILD,         // Model -> Child resource injection
     INJECTS_VALUE,         // Model -> ValueMap injection
     INJECTS_REQUEST,       // Model -> Request attribute injection
-    EXTENDS_RESOURCE_TYPE  // Resource Type -> Super Resource Type
+    EXTENDS_RESOURCE_TYPE, // Resource Type -> Super Resource Type
+
+    // Sling Job relationships
+    PROCESSES,   // JobConsumer/WorkflowProcess -> SlingJob topic (consumes jobs)
+    PRODUCES     // Component -> SlingJob topic (enqueues jobs via JobManager)
 }

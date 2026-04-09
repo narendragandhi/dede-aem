@@ -220,6 +220,44 @@ public class OsgiLinker {
     }
 
     /**
+     * Resolves the winning provider from a set of competing providers using OSGi service ranking rules:
+     * <ol>
+     *   <li>Highest {@code service.ranking} integer wins (default 0 if absent)</li>
+     *   <li>Ties broken by lowest {@code service.id} (assigned sequentially at registration)</li>
+     *   <li>If service.id is also a tie (static graph case), the provider with the
+     *       lexicographically smallest name wins, giving deterministic behaviour in tests</li>
+     * </ol>
+     *
+     * @param providers non-empty list of candidate providers
+     * @return the resolved winner, or {@code Optional.empty()} when the list is empty
+     */
+    public Optional<RankedProvider> resolveByRanking(List<CodeNode> providers) {
+        if (providers == null || providers.isEmpty()) return Optional.empty();
+
+        return providers.stream()
+            .map(p -> {
+                int ranking = parseIntProperty(p, "service.ranking", 0);
+                int serviceId = parseIntProperty(p, "service.id", Integer.MAX_VALUE);
+                return new RankedProvider(p, ranking, serviceId);
+            })
+            // highest ranking first; ties: lowest service.id; further tie: lexicographic name
+            .max(Comparator
+                .comparingInt(RankedProvider::ranking)
+                .thenComparingInt(rp -> -rp.serviceId())  // lower id = higher priority = "greater" in max()
+                .thenComparing(rp -> rp.provider().getName(), Comparator.reverseOrder()));
+    }
+
+    private int parseIntProperty(CodeNode node, String key, int defaultValue) {
+        String val = node.getProperties().get(key);
+        if (val == null) return defaultValue;
+        try { return Integer.parseInt(val.trim()); }
+        catch (NumberFormatException e) { return defaultValue; }
+    }
+
+    /** Result of service ranking resolution. */
+    public record RankedProvider(CodeNode provider, int ranking, int serviceId) {}
+
+    /**
      * Links configurations that target a specific service interface.
      * Finds all implementations of the service and links the config to them.
      */

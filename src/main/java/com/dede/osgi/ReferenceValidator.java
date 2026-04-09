@@ -1,5 +1,6 @@
 package com.dede.osgi;
 
+import com.dede.discovery.OsgiLinker;
 import com.dede.domain.GraphService;
 import com.dede.domain.model.CodeNode;
 import com.dede.domain.model.NodeType;
@@ -33,10 +34,13 @@ public class ReferenceValidator {
 
     private final GraphService graphService;
     private final LdapFilterParser ldapFilterParser;
+    private final OsgiLinker osgiLinker;
 
-    public ReferenceValidator(GraphService graphService, LdapFilterParser ldapFilterParser) {
+    public ReferenceValidator(GraphService graphService, LdapFilterParser ldapFilterParser,
+                              OsgiLinker osgiLinker) {
         this.graphService    = graphService;
         this.ldapFilterParser = ldapFilterParser;
+        this.osgiLinker       = osgiLinker;
     }
 
     /**
@@ -58,6 +62,16 @@ public class ReferenceValidator {
         }
 
         return violations;
+    }
+
+    /**
+     * Returns the IDs of all OSGI_COMPONENT nodes in the graph.
+     * Used by {@link ComponentStateTracker} to include components with no violations.
+     */
+    public java.util.stream.Stream<String> getComponentIds() {
+        return graphService.getAllNodes().stream()
+            .filter(n -> n.getType() == com.dede.domain.model.NodeType.OSGI_COMPONENT)
+            .map(CodeNode::getId);
     }
 
     private List<ReferenceViolation> validateComponent(CodeNode component) {
@@ -83,11 +97,6 @@ public class ReferenceValidator {
             // Find all providers of this service interface that match the filter
             List<CodeNode> providers = findProviders(serviceInterface, filter);
 
-            boolean satisfied = multiple
-                ? !providers.isEmpty()                  // 1..n: at least one
-                : providers.size() == 1;                // 1..1: exactly one
-            boolean tooMany = !multiple && providers.size() > 1;
-
             if (mandatory && providers.isEmpty()) {
                 violations.add(new ReferenceViolation(
                     component.getId(), component.getName(),
@@ -99,17 +108,32 @@ public class ReferenceValidator {
                         targetFilter != null ? " matching filter " + targetFilter : ""),
                     "Register a component that provides the service '" + serviceInterface.getName() + "'."
                 ));
-            } else if (tooMany) {
-                violations.add(new ReferenceViolation(
-                    component.getId(), component.getName(),
-                    serviceInterface.getId(), serviceInterface.getName(),
-                    cardinality, ViolationType.AMBIGUOUS_REFERENCE,
-                    String.format("Component '%s' has 1..1 @Reference to '%s' but %d providers found. " +
-                        "OSGi will pick the highest-ranked — this may be non-deterministic.",
-                        component.getName(), serviceInterface.getName(), providers.size()),
-                    "Add @Reference(target=\"(service.ranking>=X)\") to pin the reference, " +
-                    "or use 0..n cardinality."
-                ));
+            } else if (!multiple && providers.size() > 1) {
+                // Try to resolve via service.ranking — only flag AMBIGUOUS when a clear winner
+                // cannot be determined (i.e., two providers share the same ranking AND service.id)
+                var ranked = osgiLinker.resolveByRanking(providers);
+                boolean uniqueWinner = ranked.map(rp ->
+                    providers.stream()
+                        .filter(p -> !p.equals(rp.provider()))
+                        .noneMatch(p -> hasSameRank(p, rp))
+                ).orElse(false);
+
+                if (!uniqueWinner) {
+                    violations.add(new ReferenceViolation(
+                        component.getId(), component.getName(),
+                        serviceInterface.getId(), serviceInterface.getName(),
+                        cardinality, ViolationType.AMBIGUOUS_REFERENCE,
+                        String.format("Component '%s' has 1..1 @Reference to '%s' but %d providers " +
+                            "share the same service.ranking — OSGi selection is non-deterministic.",
+                            component.getName(), serviceInterface.getName(), providers.size()),
+                        "Add @Reference(target=\"(service.ranking>=X)\") to pin the reference, " +
+                        "or use 0..n cardinality."
+                    ));
+                } else {
+                    log.debug("Component '{}' @Reference '{}': {} providers, resolved via ranking to '{}'",
+                        component.getName(), serviceInterface.getName(), providers.size(),
+                        ranked.map(rp -> rp.provider().getName()).orElse("?"));
+                }
             }
         }
 
@@ -143,6 +167,18 @@ public class ReferenceValidator {
         if (onNode != null) return onNode;
         // Also check from-node properties scoped by service name
         return from.getProperties().get(to.getName() + "." + key);
+    }
+
+    private boolean hasSameRank(CodeNode provider, OsgiLinker.RankedProvider winner) {
+        String rankStr = provider.getProperties().get("service.ranking");
+        int rank = rankStr != null ? parseIntSafe(rankStr, 0) : 0;
+        String idStr = provider.getProperties().get("service.id");
+        int serviceId = idStr != null ? parseIntSafe(idStr, Integer.MAX_VALUE) : Integer.MAX_VALUE;
+        return rank == winner.ranking() && serviceId == winner.serviceId();
+    }
+
+    private int parseIntSafe(String val, int def) {
+        try { return Integer.parseInt(val.trim()); } catch (NumberFormatException e) { return def; }
     }
 
     private boolean isMandatory(String cardinality) {

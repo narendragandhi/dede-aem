@@ -1,0 +1,200 @@
+package com.dede.osgi;
+
+import com.dede.domain.GraphAnalyzer;
+import com.dede.domain.GraphExporter;
+import com.dede.domain.GraphRepository;
+import com.dede.domain.GraphService;
+import com.dede.domain.model.CodeNode;
+import com.dede.domain.model.NodeType;
+import com.dede.domain.model.RelationshipType;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Nested;
+import org.junit.jupiter.api.Test;
+
+import java.util.List;
+import java.util.Map;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+/**
+ * Tests for Strand 2: Advanced OSGi Service Resolution.
+ * Bead 2.1 (LdapFilterParser) and Bead 2.3 (ReferenceValidator).
+ */
+class OsgiServiceResolutionTest {
+
+    // -----------------------------------------------------------------------
+    // Bead 2.1: LdapFilterParser
+    // -----------------------------------------------------------------------
+    @Nested
+    class LdapFilterParserTests {
+
+        private LdapFilterParser parser;
+
+        @BeforeEach
+        void setUp() { parser = new LdapFilterParser(); }
+
+        @Test
+        void parsesSimpleEquality() {
+            var node = parser.parse("(vendor=Acme)");
+            assertThat(node.matches(Map.of("vendor", "Acme"))).isTrue();
+            assertThat(node.matches(Map.of("vendor", "Other"))).isFalse();
+        }
+
+        @Test
+        void parsesPresenceCheck() {
+            var node = parser.parse("(service.ranking=*)");
+            assertThat(node.matches(Map.of("service.ranking", "100"))).isTrue();
+            assertThat(node.matches(Map.of("other", "value"))).isFalse();
+        }
+
+        @Test
+        void parsesGteComparison() {
+            var node = parser.parse("(service.ranking>=100)");
+            assertThat(node.matches(Map.of("service.ranking", "200"))).isTrue();
+            assertThat(node.matches(Map.of("service.ranking", "50"))).isFalse();
+            assertThat(node.matches(Map.of("service.ranking", "100"))).isTrue();
+        }
+
+        @Test
+        void parsesAndFilter() {
+            var node = parser.parse("(&(vendor=Acme)(tier=premium))");
+            assertThat(node.matches(Map.of("vendor", "Acme", "tier", "premium"))).isTrue();
+            assertThat(node.matches(Map.of("vendor", "Acme", "tier", "free"))).isFalse();
+        }
+
+        @Test
+        void parsesOrFilter() {
+            var node = parser.parse("(|(vendor=Acme)(vendor=Other))");
+            assertThat(node.matches(Map.of("vendor", "Acme"))).isTrue();
+            assertThat(node.matches(Map.of("vendor", "Other"))).isTrue();
+            assertThat(node.matches(Map.of("vendor", "Unknown"))).isFalse();
+        }
+
+        @Test
+        void parsesNotFilter() {
+            var node = parser.parse("(!(env=test))");
+            assertThat(node.matches(Map.of("env", "prod"))).isTrue();
+            assertThat(node.matches(Map.of("env", "test"))).isFalse();
+        }
+
+        @Test
+        void parsesWildcardGlob() {
+            var node = parser.parse("(objectClass=com.example.*)");
+            assertThat(node.matches(Map.of("objectClass", "com.example.MyService"))).isTrue();
+            assertThat(node.matches(Map.of("objectClass", "org.other.Service"))).isFalse();
+        }
+
+        @Test
+        void nullFilterMatchesAnything() {
+            var node = parser.parse(null);
+            assertThat(node.matches(Map.of())).isTrue();
+            assertThat(node.matches(Map.of("any", "value"))).isTrue();
+        }
+
+        @Test
+        void malformedFilterReturnsMatchAll() {
+            // Fail-open: unparsable filter = match everything (safer than silently dropping)
+            var node = parser.parse("not-an-ldap-filter");
+            assertThat(node.matches(Map.of())).isTrue();
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Bead 2.3: ReferenceValidator
+    // -----------------------------------------------------------------------
+    @Nested
+    class ReferenceValidatorTests {
+
+        private GraphService graphService;
+        private ReferenceValidator validator;
+
+        @BeforeEach
+        void setUp() {
+            GraphRepository repo = new GraphRepository();
+            graphService = new GraphService(repo, new GraphAnalyzer(repo), new GraphExporter(repo));
+            validator = new ReferenceValidator(graphService, new LdapFilterParser());
+        }
+
+        /** Adds a component + service interface + CONSUMES edge to graph. */
+        private CodeNode addComponent(String id, String name) {
+            CodeNode node = new CodeNode(id, name, NodeType.OSGI_COMPONENT, name, null);
+            graphService.addNode(node);
+            return node;
+        }
+
+        private CodeNode addService(String id, String name) {
+            CodeNode node = new CodeNode(id, name, NodeType.OSGI_SERVICE, name, null);
+            graphService.addNode(node);
+            return node;
+        }
+
+        private void consumes(CodeNode component, CodeNode service) {
+            graphService.addEdge(component, service, RelationshipType.CONSUMES);
+        }
+
+        private void provides(CodeNode component, CodeNode service) {
+            graphService.addEdge(component, service, RelationshipType.PROVIDES);
+        }
+
+        @Test
+        void satisfiedReferenceProducesNoViolation() {
+            CodeNode comp     = addComponent("comp:A", "ComponentA");
+            CodeNode svc      = addService("svc:MyService", "MyService");
+            CodeNode provider = addComponent("comp:Provider", "Provider");
+
+            consumes(comp, svc);
+            provides(provider, svc);
+
+            assertThat(validator.validate()).isEmpty();
+        }
+
+        @Test
+        void unsatisfiedMandatoryReferenceIsDetected() {
+            CodeNode comp = addComponent("comp:NeedsService", "NeedsService");
+            CodeNode svc  = addService("svc:MissingService", "MissingService");
+
+            consumes(comp, svc);
+            // No provider registered
+
+            List<ReferenceValidator.ReferenceViolation> violations = validator.validate();
+            assertThat(violations)
+                .extracting(ReferenceValidator.ReferenceViolation::type)
+                .contains(ReferenceValidator.ViolationType.UNSATISFIED_MANDATORY);
+        }
+
+        @Test
+        void multipleProvidersFor1to1ReferenceIsAmbiguous() {
+            CodeNode comp      = addComponent("comp:Consumer", "Consumer");
+            CodeNode svc       = addService("svc:SharedSvc", "SharedSvc");
+            CodeNode provider1 = addComponent("comp:Prov1", "Provider1");
+            CodeNode provider2 = addComponent("comp:Prov2", "Provider2");
+
+            consumes(comp, svc);
+            provides(provider1, svc);
+            provides(provider2, svc);
+
+            List<ReferenceValidator.ReferenceViolation> violations = validator.validate();
+            assertThat(violations)
+                .extracting(ReferenceValidator.ReferenceViolation::type)
+                .contains(ReferenceValidator.ViolationType.AMBIGUOUS_REFERENCE);
+        }
+
+        @Test
+        void emptyGraphProducesNoViolations() {
+            assertThat(validator.validate()).isEmpty();
+        }
+
+        @Test
+        void violationMessageContainsComponentAndServiceName() {
+            CodeNode comp = addComponent("comp:X", "ComponentX");
+            CodeNode svc  = addService("svc:Y", "ServiceY");
+            consumes(comp, svc);
+
+            var violations = validator.validate();
+            assertThat(violations).isNotEmpty();
+            assertThat(violations.get(0).message())
+                .contains("ComponentX")
+                .contains("ServiceY");
+        }
+    }
+}

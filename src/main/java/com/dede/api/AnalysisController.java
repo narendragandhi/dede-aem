@@ -6,6 +6,10 @@ import com.dede.cloud.ForbiddenApiScanner;
 import com.dede.cloud.SarifReport;
 import com.dede.cloud.SupplyChainReport;
 import com.dede.intelligence.CloudReadinessAnalyzer;
+import com.dede.security.AclAnalyzer;
+import com.dede.security.SecurityReport;
+import com.dede.security.ServletSecurityAuditor;
+import com.dede.security.XssDetector;
 import com.dede.intelligence.CloudReadinessAnalyzer.CloudReadinessReport;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -36,13 +40,22 @@ public class AnalysisController {
     private final CloudReadinessAnalyzer cloudReadinessAnalyzer;
     private final BpaReportGenerator bpaReportGenerator;
     private final ForbiddenApiScanner forbiddenApiScanner;
+    private final ServletSecurityAuditor servletAuditor;
+    private final XssDetector xssDetector;
+    private final AclAnalyzer aclAnalyzer;
 
     public AnalysisController(CloudReadinessAnalyzer cloudReadinessAnalyzer,
                               BpaReportGenerator bpaReportGenerator,
-                              ForbiddenApiScanner forbiddenApiScanner) {
+                              ForbiddenApiScanner forbiddenApiScanner,
+                              ServletSecurityAuditor servletAuditor,
+                              XssDetector xssDetector,
+                              AclAnalyzer aclAnalyzer) {
         this.cloudReadinessAnalyzer = cloudReadinessAnalyzer;
-        this.bpaReportGenerator = bpaReportGenerator;
-        this.forbiddenApiScanner = forbiddenApiScanner;
+        this.bpaReportGenerator     = bpaReportGenerator;
+        this.forbiddenApiScanner    = forbiddenApiScanner;
+        this.servletAuditor         = servletAuditor;
+        this.xssDetector            = xssDetector;
+        this.aclAnalyzer            = aclAnalyzer;
     }
 
     @GetMapping("/cloud-readiness")
@@ -201,6 +214,60 @@ public class AnalysisController {
         return ResponseEntity.ok()
             .header(HttpHeaders.CONTENT_TYPE, "text/markdown; charset=UTF-8")
             .body(report.toMarkdown());
+    }
+
+    @GetMapping("/security-report")
+    @Operation(summary = "Unified security report (JSON)",
+               description = "Runs all security analyzers (supply-chain, servlet, XSS, ACL) and returns a JSON summary")
+    @ApiResponses(value = {
+        @ApiResponse(responseCode = "200", description = "Report generated successfully")
+    })
+    public ResponseEntity<Map<String, Object>> getSecurityReport(
+            @Parameter(description = "Absolute path to the project root to scan")
+            @RequestParam String projectPath) {
+        log.info("Running unified security report for: {}", projectPath);
+        SecurityReport report = buildSecurityReport(projectPath);
+        return ResponseEntity.ok(report.toJson());
+    }
+
+    @GetMapping(value = "/security-report/markdown", produces = "text/markdown")
+    @Operation(summary = "Unified security report (Markdown)")
+    @ApiResponses(value = {
+        @ApiResponse(responseCode = "200", description = "Markdown report generated")
+    })
+    public ResponseEntity<String> getSecurityReportMarkdown(
+            @Parameter(description = "Absolute path to the project root to scan")
+            @RequestParam String projectPath) {
+        log.info("Generating Markdown security report for: {}", projectPath);
+        SecurityReport report = buildSecurityReport(projectPath);
+        return ResponseEntity.ok()
+            .header(HttpHeaders.CONTENT_TYPE, "text/markdown; charset=UTF-8")
+            .body(report.toMarkdown());
+    }
+
+    @GetMapping(value = "/security-report/sarif", produces = MediaType.APPLICATION_JSON_VALUE)
+    @Operation(summary = "Unified security report (SARIF 2.1.0)")
+    @ApiResponses(value = {
+        @ApiResponse(responseCode = "200", description = "SARIF report generated")
+    })
+    public ResponseEntity<Map<String, Object>> getSecurityReportSarif(
+            @Parameter(description = "Absolute path to the project root to scan")
+            @RequestParam String projectPath) {
+        log.info("Generating SARIF security report for: {}", projectPath);
+        SecurityReport report = buildSecurityReport(projectPath);
+        return ResponseEntity.ok()
+            .header(HttpHeaders.CONTENT_TYPE, "application/sarif+json")
+            .body(report.toSarif());
+    }
+
+    private SecurityReport buildSecurityReport(String projectPath) {
+        Path root = Path.of(projectPath);
+        ForbiddenApiScanner.ScanResult scanResult = forbiddenApiScanner.scanProject(root);
+        SupplyChainReport supplyChain = new SupplyChainReport(scanResult.violations(), root);
+        ServletSecurityAuditor.AuditResult servletResult = servletAuditor.audit(root);
+        XssDetector.ScanResult xssResult = xssDetector.scan(root);
+        AclAnalyzer.AnalysisResult aclResult = aclAnalyzer.analyze(root);
+        return new SecurityReport(supplyChain, servletResult, xssResult, aclResult, root);
     }
 
     /**

@@ -4,7 +4,8 @@ A static analysis tool for validating AEM codebase compatibility with AEM as a C
 
 [![Java Version](https://img.shields.io/badge/Java-21-blue)](https://openjdk.org/projects/jdk/21/)
 [![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.2.0-green)](https://spring.io/projects/spring-boot)
-[![Tests](https://img.shields.io/badge/Tests-116%20passing-brightgreen)]()
+[![Tests](https://img.shields.io/badge/Tests-188%20passing-brightgreen)]()
+[![Docker](https://img.shields.io/badge/ghcr.io-dede--java-blue)](https://github.com/features/packages)
 
 ---
 
@@ -45,8 +46,7 @@ java -jar dede.jar /path/to/your-aem-project
 
 - **Overlaps with BPA** - Adobe's Best Practices Analyzer is official and maintained
 - **Static analysis only** - No runtime behavior, no content analysis
-- **Java focus** - HTL templates and dispatcher configs not deeply analyzed
-- **Dependency graph is shallow** - Based on annotations, not runtime tracing
+- **Dependency graph based on annotations** - Not full runtime call tracing
 
 ---
 
@@ -103,8 +103,20 @@ Detects relationships between:
 - **Sling Servlets** → Resource types, paths, selectors, extensions
 - **Sling Filters** → Filter scopes
 - **Sling Models** → OSGi services, child resources, value injections
-- **OSGi Components** → Service providers and consumers
+- **OSGi Components** → Service providers and consumers (with LDAP filter + service.ranking resolution)
+- **Sling Jobs** → JobConsumer `@JobConsumer(slingJobTopics)` and `JobManager.addJob()` topology
 - **Packages** → Classes → Methods
+
+### OSGi Service Resolution
+
+Dede validates OSGi `@Reference` cardinalities statically:
+
+| Situation | Reported As |
+|-----------|-------------|
+| 1..1 reference with no provider | `UNSATISFIED_MANDATORY` |
+| 1..1 with multiple providers, same service.ranking | `AMBIGUOUS_REFERENCE` |
+| 1..1 with clear highest-ranked provider | Resolved silently |
+| `@Reference(target="(vendor=Acme)")` LDAP filter | Filter evaluated against provider properties |
 
 ---
 
@@ -191,7 +203,27 @@ mvn spring-boot:run
 | `GET /api/graph/nodes/{id}/outgoing` | What this node depends on |
 | `GET /api/graph/cycles` | Circular dependency detection |
 
-Swagger UI: `http://localhost:8080/swagger-ui.html`
+Swagger UI: `http://localhost:8080/swagger-ui.html`  
+GraphQL Explorer: `http://localhost:8080/graphiql`
+
+#### Example Requests
+
+```bash
+# Get full graph
+curl http://localhost:8080/api/graph
+
+# Get stats
+curl http://localhost:8080/api/graph/stats
+
+# Find a node
+curl http://localhost:8080/api/graph/nodes/bundle:core
+
+# Detect circular dependencies
+curl http://localhost:8080/api/graph/cycles
+
+# Incoming dependencies for a node (blast radius)
+curl http://localhost:8080/api/graph/nodes/bundle:core/incoming
+```
 
 ---
 
@@ -224,9 +256,42 @@ java -jar dede.jar /project --profiles aem,myprofile
 
 ---
 
+## Docker
+
+```bash
+# Pull from GitHub Container Registry
+docker pull ghcr.io/your-org/dede-java:latest
+
+# Run against a project
+docker run --rm \
+  -v /path/to/aem-project:/scan:ro \
+  -p 8080:8080 \
+  ghcr.io/your-org/dede-java:latest /scan
+
+# Run as API server
+docker run -p 8080:8080 ghcr.io/your-org/dede-java:latest
+```
+
+### Docker Compose
+
+```yaml
+services:
+  dede:
+    image: ghcr.io/your-org/dede-java:latest
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./aem-project:/scan:ro
+    command: /scan
+```
+
+---
+
 ## CI/CD Integration
 
 ### GitHub Actions
+
+See [`examples/github-workflow.yml`](examples/github-workflow.yml) for a copy-paste workflow.
 
 ```yaml
 - name: AEM Cloud Readiness Check
@@ -301,10 +366,31 @@ See [dede-aem-bundle/README.md](dede-aem-bundle/README.md) for full documentatio
 
 ---
 
+## Architecture
+
+```mermaid
+graph TD
+    A[ProjectScanner] -->|walks src/| B[SourceParser]
+    A -->|walks config/| C[OsgiConfigParser]
+    A -->|walks content/| D[JcrContentParser]
+    B --> E[GraphService]
+    C --> E
+    D --> E
+    E --> F[OsgiLinker]
+    F -->|resolves ranks| G[ReferenceValidator]
+    G --> H[ComponentStateTracker]
+    E --> I[ForbiddenApiScanner]
+    E --> J[SlingJobParser]
+    E --> K[GraphController / REST API]
+    K -->|serves| L[Web UI]
+```
+
+---
+
 ## Development
 
 ```bash
-# Run tests (116 tests)
+# Run tests (188 tests)
 mvn test
 
 # Run with coverage

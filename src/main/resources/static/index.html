@@ -1,130 +1,163 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Dede-Java - Architectural Intelligence</title>
-    <!-- Cytoscape.js Core -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape/3.28.1/cytoscape.min.js"></script>
-    <!-- Layout Algorithms -->
     <script src="https://cdn.jsdelivr.net/npm/cytoscape-cose-bilkent@4.1.0/cytoscape-cose-bilkent.min.js"></script>
     <style>
+        :root[data-theme="dark"] {
+            --bg: #0d1117;
+            --surface: #161b22;
+            --surface2: #21262d;
+            --border: #30363d;
+            --text: #c9d1d9;
+            --text-muted: #8b949e;
+            --accent: #58a6ff;
+            --danger: #f85149;
+            --success: #238636;
+        }
+        :root[data-theme="light"] {
+            --bg: #f6f8fa;
+            --surface: #ffffff;
+            --surface2: #f0f2f5;
+            --border: #d0d7de;
+            --text: #24292f;
+            --text-muted: #57606a;
+            --accent: #0969da;
+            --danger: #cf222e;
+            --success: #1a7f37;
+        }
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: #0d1117;
-            color: #c9d1d9;
+            background: var(--bg);
+            color: var(--text);
             overflow: hidden;
+            transition: background 0.2s, color 0.2s;
         }
         #app { display: flex; height: 100vh; }
 
         /* Sidebar */
         #sidebar {
             width: 320px;
-            background: #161b22;
-            border-right: 1px solid #30363d;
+            background: var(--surface);
+            border-right: 1px solid var(--border);
             display: flex;
             flex-direction: column;
             overflow: hidden;
             z-index: 10;
         }
         #sidebar header {
-            padding: 16px;
-            border-bottom: 1px solid #30363d;
+            padding: 14px 16px;
+            border-bottom: 1px solid var(--border);
             background: linear-gradient(135deg, #238636 0%, #1f6feb 100%);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
         }
-        #sidebar h1 {
-            font-size: 18px;
-            font-weight: 600;
+        #sidebar h1 { font-size: 17px; font-weight: 600; color: white; }
+        #sidebar .subtitle { font-size: 11px; color: rgba(255,255,255,0.8); margin-top: 2px; }
+
+        /* Theme toggle */
+        #theme-btn {
+            background: rgba(255,255,255,0.15);
+            border: 1px solid rgba(255,255,255,0.3);
             color: white;
+            border-radius: 6px;
+            padding: 4px 8px;
+            cursor: pointer;
+            font-size: 14px;
         }
-        #sidebar .subtitle {
-            font-size: 11px;
-            color: rgba(255,255,255,0.8);
-            margin-top: 4px;
-        }
+        #theme-btn:hover { background: rgba(255,255,255,0.25); }
 
         /* Stats */
         #stats {
             display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 12px;
-            padding: 16px;
-            border-bottom: 1px solid #30363d;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 8px;
+            padding: 12px 16px;
+            border-bottom: 1px solid var(--border);
         }
         .stat-card {
-            background: #21262d;
+            background: var(--surface2);
             border-radius: 8px;
-            padding: 12px;
+            padding: 10px;
             text-align: center;
+            position: relative;
         }
-        .stat-value {
-            font-size: 24px;
-            font-weight: 700;
-            color: #58a6ff;
-        }
-        .stat-label {
-            font-size: 11px;
-            color: #8b949e;
-            text-transform: uppercase;
-        }
+        .stat-value { font-size: 20px; font-weight: 700; color: var(--accent); }
+        .stat-value.danger { color: var(--danger); }
+        .stat-label { font-size: 10px; color: var(--text-muted); text-transform: uppercase; }
 
         /* Search */
-        #search-box {
-            padding: 12px 16px;
-            border-bottom: 1px solid #30363d;
-        }
+        #search-box { padding: 10px 16px; border-bottom: 1px solid var(--border); }
         #search-input {
             width: 100%;
-            padding: 10px 12px;
-            background: #0d1117;
-            border: 1px solid #30363d;
+            padding: 8px 12px;
+            background: var(--bg);
+            border: 1px solid var(--border);
             border-radius: 6px;
-            color: #c9d1d9;
+            color: var(--text);
+            font-size: 13px;
         }
+        #search-input:focus { outline: none; border-color: var(--accent); }
+        #search-hint { font-size: 11px; color: var(--text-muted); margin-top: 4px; }
 
         /* Filters */
-        #filters {
-            padding: 12px 16px;
-            border-bottom: 1px solid #30363d;
-        }
-        .filter-chips {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 6px;
-        }
+        #filters { padding: 10px 16px; border-bottom: 1px solid var(--border); }
+        .filter-section-label { font-size: 11px; color: var(--text-muted); text-transform: uppercase; margin-bottom: 6px; }
+        .filter-chips { display: flex; flex-wrap: wrap; gap: 5px; }
         .chip {
-            padding: 4px 10px;
-            background: #21262d;
-            border: 1px solid #30363d;
+            padding: 3px 9px;
+            background: var(--surface2);
+            border: 1px solid var(--border);
             border-radius: 20px;
-            font-size: 12px;
+            font-size: 11px;
             cursor: pointer;
+            color: var(--text);
+            transition: all 0.15s;
         }
-        .chip.active {
-            background: #388bfd;
+        .chip.active { background: var(--accent); color: white; border-color: transparent; }
+        .chip.severity-critical.active { background: #8957e5; }
+        .chip.severity-high.active    { background: var(--danger); }
+        .chip.severity-medium.active  { background: #d29922; }
+
+        /* Node list */
+        #node-list { flex: 1; overflow-y: auto; padding: 6px 8px; }
+        .node-item {
+            padding: 7px 10px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 12px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            color: var(--text);
+        }
+        .node-item:hover { background: var(--surface2); }
+        .node-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+        .badge {
+            margin-left: auto;
+            background: var(--danger);
             color: white;
+            border-radius: 10px;
+            padding: 1px 6px;
+            font-size: 10px;
         }
 
         /* Graph container */
-        #graph-container {
-            flex: 1;
-            position: relative;
-            background: #0d1117;
-        }
-        #cy {
-            width: 100%;
-            height: 100%;
-        }
+        #graph-container { flex: 1; position: relative; background: var(--bg); }
+        #cy { width: 100%; height: 100%; }
 
         /* Details Panel */
         #details-panel {
             position: absolute;
-            top: 16px;
-            right: 16px;
+            top: 16px; right: 16px;
             width: 340px;
-            background: #161b22;
-            border: 1px solid #30363d;
+            background: var(--surface);
+            border: 1px solid var(--border);
             border-radius: 12px;
             display: none;
             max-height: calc(100vh - 32px);
@@ -132,264 +165,625 @@
             z-index: 100;
         }
         #details-panel.visible { display: block; }
+        #details-close {
+            position: absolute;
+            top: 12px; right: 12px;
+            background: none;
+            border: none;
+            color: var(--text-muted);
+            cursor: pointer;
+            font-size: 16px;
+        }
+
+        /* Find Path Modal */
+        #find-path-modal {
+            display: none;
+            position: absolute;
+            top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 20px;
+            width: 360px;
+            z-index: 200;
+        }
+        #find-path-modal.visible { display: block; }
+        #find-path-modal h3 { margin-bottom: 12px; font-size: 15px; }
+        #find-path-modal input {
+            width: 100%;
+            padding: 8px 10px;
+            margin-bottom: 8px;
+            background: var(--bg);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            color: var(--text);
+            font-size: 13px;
+        }
+        #modal-overlay {
+            display: none;
+            position: absolute;
+            inset: 0;
+            background: rgba(0,0,0,0.5);
+            z-index: 150;
+        }
+        #modal-overlay.visible { display: block; }
 
         /* Controls */
         #controls {
             position: absolute;
-            bottom: 24px;
-            left: 50%;
+            bottom: 20px; left: 50%;
             transform: translateX(-50%);
             display: flex;
-            gap: 12px;
-            background: rgba(22, 27, 34, 0.9);
-            padding: 12px;
+            gap: 8px;
+            background: rgba(22, 27, 34, 0.92);
+            padding: 10px;
             border-radius: 12px;
-            border: 1px solid #30363d;
+            border: 1px solid var(--border);
             backdrop-filter: blur(8px);
+            flex-wrap: wrap;
+            justify-content: center;
+            max-width: calc(100% - 40px);
         }
+        :root[data-theme="light"] #controls { background: rgba(246,248,250,0.92); }
         .btn {
-            background: #21262d;
-            border: 1px solid #30363d;
-            color: #c9d1d9;
-            padding: 8px 16px;
+            background: var(--surface2);
+            border: 1px solid var(--border);
+            color: var(--text);
+            padding: 7px 13px;
             border-radius: 6px;
             cursor: pointer;
-            font-size: 13px;
+            font-size: 12px;
+            white-space: nowrap;
         }
-        .btn:hover { background: #30363d; border-color: #58a6ff; }
-        .btn.primary { background: #238636; border: none; color: white; }
+        .btn:hover { background: var(--border); border-color: var(--accent); }
+        .btn.primary { background: var(--success); border: none; color: white; }
+        .btn.active { background: var(--danger); border-color: var(--danger); color: white; }
+        .btn-icon { font-size: 14px; }
 
-        /* Mode indicators */
+        /* Mode badges */
         #mode-badge {
             position: absolute;
-            top: 16px;
-            left: 336px;
+            top: 16px; left: 336px;
             padding: 4px 12px;
             border-radius: 20px;
             font-size: 11px;
             font-weight: bold;
             text-transform: uppercase;
-            background: #21262d;
-            border: 1px solid #30363d;
+            background: var(--surface2);
+            border: 1px solid var(--border);
+            color: var(--text-muted);
             display: none;
         }
-        #mode-badge.blast-radius { display: block; background: #f85149; color: white; border: none; }
+        #mode-badge.visible { display: block; }
+        #mode-badge.blast-radius { background: var(--danger); color: white; border: none; }
+
+        /* Keyboard hint */
+        #keyboard-hint {
+            position: absolute;
+            bottom: 72px; right: 16px;
+            font-size: 11px;
+            color: var(--text-muted);
+        }
+        kbd {
+            background: var(--surface2);
+            border: 1px solid var(--border);
+            border-radius: 3px;
+            padding: 1px 5px;
+            font-size: 10px;
+            font-family: monospace;
+        }
 
         /* Loading */
         #loading {
             position: absolute;
-            top: 50%;
-            left: 50%;
+            top: 50%; left: 50%;
             transform: translate(-50%, -50%);
             text-align: center;
         }
         .spinner {
             width: 40px; height: 40px;
-            border: 3px solid #30363d; border-top-color: #58a6ff;
-            border-radius: 50%; animation: spin 1s linear infinite;
+            border: 3px solid var(--border); border-top-color: var(--accent);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
             margin: 0 auto 16px;
         }
         @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* Violation severity colours */
+        .sev-critical { color: #8957e5; }
+        .sev-high { color: var(--danger); }
+        .sev-medium { color: #d29922; }
+        .sev-low { color: #3fb950; }
     </style>
 </head>
 <body>
-    <div id="app">
-        <div id="sidebar">
-            <header>
+<div id="app">
+    <div id="sidebar">
+        <header>
+            <div>
                 <h1>Dede-Java</h1>
                 <div class="subtitle">Architectural Intelligence Engine</div>
-            </header>
-            <div id="stats">
-                <div class="stat-card"><div class="stat-value" id="node-count">-</div><div class="stat-label">Nodes</div></div>
-                <div class="stat-card"><div class="stat-value" id="edge-count">-</div><div class="stat-label">Edges</div></div>
             </div>
-            <div id="search-box">
-                <input type="text" id="search-input" placeholder="Search architecture...">
-            </div>
-            <div id="filters">
-                <div class="filter-chips" id="type-filters"></div>
-            </div>
-            <div id="node-list" style="flex:1; overflow-y:auto; padding:8px;"></div>
+            <button id="theme-btn" title="Toggle theme (T)">☀</button>
+        </header>
+        <div id="stats">
+            <div class="stat-card"><div class="stat-value" id="node-count">-</div><div class="stat-label">Nodes</div></div>
+            <div class="stat-card"><div class="stat-value" id="edge-count">-</div><div class="stat-label">Edges</div></div>
+            <div class="stat-card"><div class="stat-value danger" id="vuln-count">-</div><div class="stat-label">Violations</div></div>
         </div>
-
-        <div id="graph-container">
-            <div id="cy"></div>
-            <div id="mode-badge">Blast Radius Mode</div>
-            <div id="loading"><div class="spinner"></div><div>Building Topological Map...</div></div>
-
-            <div id="details-panel">
-                <div id="details-header" style="padding:16px; border-bottom:1px solid #30363d;">
-                    <h2 id="details-title" style="font-size:16px;">Node Details</h2>
-                </div>
-                <div id="details-content" style="padding:16px;"></div>
-            </div>
-
-            <div id="controls">
-                <button class="btn primary" id="btn-layout">Auto-Layout</button>
-                <button class="btn" id="btn-blast">Blast Radius Explorer</button>
-                <button class="btn" id="btn-reset">Reset View</button>
-                <button class="btn" id="btn-refresh">Pull Delta</button>
-            </div>
+        <div id="search-box">
+            <input type="text" id="search-input" placeholder="Search nodes… (/)">
+            <div id="search-hint"></div>
         </div>
+        <div id="filters">
+            <div class="filter-section-label">Node Types</div>
+            <div class="filter-chips" id="type-filters"></div>
+        </div>
+        <div id="node-list"></div>
     </div>
 
-    <script>
-        const nodeStyles = [
-            { selector: 'node', style: { 
-                'label': 'data(name)', 'color': '#c9d1d9', 'font-size': '10px',
-                'background-color': '#8b949e', 'width': 20, 'height': 20,
-                'text-valign': 'bottom', 'text-margin-y': 4, 'text-wrap': 'ellipsis', 'text-max-width': 80
-            }},
-            { selector: 'node[type="BUNDLE"]', style: { 'background-color': '#238636', 'width': 40, 'height': 40, 'font-size': '12px', 'font-weight': 'bold' }},
-            { selector: 'node[type="SLING_SERVLET"]', style: { 'background-color': '#ff7b72', 'shape': 'rectangle' }},
-            { selector: 'node[type="SLING_MODEL"]', style: { 'background-color': '#f0883e', 'shape': 'diamond' }},
-            { selector: 'node[type="OSGI_SERVICE"]', style: { 'background-color': '#db6d28', 'shape': 'triangle' }},
-            { selector: 'node[type="JCR_RESOURCE_TYPE"]', style: { 'background-color': '#79c0ff' }},
-            { selector: 'node[type="VULNERABILITY"]', style: { 'background-color': '#f85149', 'width': 30, 'height': 30, 'label': '⚠ data(name)' }},
-            { selector: 'edge', style: {
-                'width': 1, 'line-color': '#30363d', 'target-arrow-color': '#30363d',
-                'target-arrow-shape': 'triangle', 'curve-style': 'bezier', 'opacity': 0.6
-            }},
-            { selector: 'edge[type="EXPOSES"]', style: { 'line-color': '#f85149', 'width': 2, 'line-style': 'dashed' }},
-            { selector: 'edge[type="CONSUMES"]', style: { 'line-color': '#d29922' }},
-            { selector: '.highlighted', style: { 'background-color': '#58a6ff', 'line-color': '#58a6ff', 'target-arrow-color': '#58a6ff', 'width': 4, 'opacity': 1, 'z-index': 999 }},
-            { selector: '.blast-target', style: { 'background-color': '#f85149', 'line-color': '#f85149', 'width': 3, 'opacity': 1 }}
-        ];
+    <div id="graph-container">
+        <div id="cy"></div>
+        <div id="mode-badge">Mode</div>
+        <div id="loading"><div class="spinner"></div><div>Building Topological Map…</div></div>
 
-        let cy;
-        let isBlastMode = false;
+        <div id="modal-overlay"></div>
+        <div id="find-path-modal">
+            <h3>Find Path</h3>
+            <input type="text" id="path-from" placeholder="From node name…">
+            <input type="text" id="path-to"   placeholder="To node name…">
+            <div style="display:flex; gap:8px; margin-top:8px;">
+                <button class="btn primary" id="btn-find-path-go">Find</button>
+                <button class="btn" id="btn-find-path-close">Cancel</button>
+            </div>
+            <div id="path-result" style="margin-top:10px; font-size:12px; color:var(--text-muted);"></div>
+        </div>
 
-        async function init() {
-            const response = await fetch('/api/graph');
-            const data = await response.json();
-            
-            const elements = {
-                nodes: data.nodes.map(n => ({ data: { id: n.id, name: n.name, type: n.type, ...n.properties } })),
-                edges: data.edges.map(e => ({ data: { source: e.source, target: e.target, type: e.type } }))
-            };
+        <div id="details-panel">
+            <button id="details-close" title="Close (Esc)">✕</button>
+            <div style="padding:16px; border-bottom:1px solid var(--border);">
+                <h2 id="details-title" style="font-size:15px; padding-right:24px;">Node Details</h2>
+            </div>
+            <div id="details-content" style="padding:16px;"></div>
+        </div>
 
-            cy = cytoscape({
-                container: document.getElementById('cy'),
-                elements: elements,
-                style: nodeStyles,
-                layout: { name: 'cose-bilkent', animate: false }
-            });
+        <div id="controls">
+            <button class="btn primary btn-icon" id="btn-layout" title="Auto-Layout (L)">⊞ Layout</button>
+            <button class="btn btn-icon" id="btn-blast" title="Blast Radius Explorer (B)">💥 Blast Radius</button>
+            <button class="btn btn-icon" id="btn-find-path" title="Find dependency path (P)">🔀 Find Path</button>
+            <button class="btn btn-icon" id="btn-export-json" title="Export visible nodes as JSON">⬇ JSON</button>
+            <button class="btn btn-icon" id="btn-export-csv"  title="Export visible nodes as CSV">⬇ CSV</button>
+            <button class="btn btn-icon" id="btn-reset" title="Reset View (R)">↺ Reset</button>
+            <button class="btn btn-icon" id="btn-refresh" title="Pull Delta">⟳ Delta</button>
+        </div>
 
-            document.getElementById('node-count').textContent = data.nodes.length;
-            document.getElementById('edge-count').textContent = data.edges.length;
-            document.getElementById('loading').style.display = 'none';
+        <div id="keyboard-hint">
+            <kbd>/</kbd> search &nbsp;
+            <kbd>Esc</kbd> close &nbsp;
+            <kbd>B</kbd> blast &nbsp;
+            <kbd>P</kbd> path &nbsp;
+            <kbd>L</kbd> layout &nbsp;
+            <kbd>T</kbd> theme &nbsp;
+            <kbd>R</kbd> reset
+        </div>
+    </div>
+</div>
 
-            setupInteractions();
-            buildFilters(data.nodes);
+<script>
+// ─── Colour map for node types ──────────────────────────────────────────────
+const NODE_COLOURS = {
+    BUNDLE:           '#238636',
+    SLING_SERVLET:    '#ff7b72',
+    SLING_MODEL:      '#f0883e',
+    OSGI_SERVICE:     '#db6d28',
+    OSGI_COMPONENT:   '#3fb950',
+    JCR_RESOURCE_TYPE:'#79c0ff',
+    VULNERABILITY:    '#f85149',
+    SLING_JOB:        '#c084fc',
+    WORKFLOW_PROCESS: '#a371f7',
+    CLIENTLIB:        '#d2a8ff',
+    HTL_FILE:         '#87bfff',
+};
+
+function nodeColour(type) { return NODE_COLOURS[type] || '#8b949e'; }
+
+const BASE_STYLES = [
+    { selector: 'node', style: {
+        'label': 'data(label)', 'color': '#c9d1d9', 'font-size': '10px',
+        'background-color': 'data(colour)', 'width': 20, 'height': 20,
+        'text-valign': 'bottom', 'text-margin-y': 4,
+        'text-wrap': 'ellipsis', 'text-max-width': 80
+    }},
+    { selector: 'node[type="BUNDLE"]', style: { 'width': 36, 'height': 36, 'font-size': '12px', 'font-weight': 'bold' }},
+    { selector: 'node[type="VULNERABILITY"]', style: { 'width': 28, 'height': 28, 'shape': 'star' }},
+    { selector: 'node[type="SLING_SERVLET"]', style: { 'shape': 'rectangle' }},
+    { selector: 'node[type="SLING_MODEL"]',   style: { 'shape': 'diamond' }},
+    { selector: 'node[type="SLING_JOB"]',     style: { 'shape': 'hexagon' }},
+    { selector: 'node[hasViolations="true"]', style: {
+        'border-width': 2, 'border-color': '#f85149',
+        'border-style': 'solid'
+    }},
+    { selector: 'edge', style: {
+        'width': 1, 'line-color': '#30363d',
+        'target-arrow-color': '#30363d', 'target-arrow-shape': 'triangle',
+        'curve-style': 'bezier', 'opacity': 0.6
+    }},
+    { selector: 'edge[type="EXPOSES"]',  style: { 'line-color': '#f85149', 'width': 2, 'line-style': 'dashed' }},
+    { selector: 'edge[type="CONSUMES"]', style: { 'line-color': '#d29922' }},
+    { selector: 'edge[type="PROCESSES"]',style: { 'line-color': '#c084fc' }},
+    { selector: 'edge[type="PRODUCES"]', style: { 'line-color': '#a371f7', 'line-style': 'dashed' }},
+    { selector: '.highlighted', style: {
+        'background-color': '#58a6ff', 'line-color': '#58a6ff',
+        'target-arrow-color': '#58a6ff', 'width': 4, 'opacity': 1, 'z-index': 999
+    }},
+    { selector: '.blast-target',  style: { 'background-color': '#f85149', 'line-color': '#f85149', 'width': 3, 'opacity': 1 }},
+    { selector: '.path-target',   style: { 'background-color': '#3fb950', 'line-color': '#3fb950', 'width': 3, 'opacity': 1 }},
+    { selector: '.faded', style: { 'opacity': 0.08 }},
+];
+
+let cy;
+let isBlastMode = false;
+let allData = { nodes: [], edges: [] };
+
+// ─── Initialisation ──────────────────────────────────────────────────────────
+async function init() {
+    const response = await fetch('/api/graph');
+    allData = await response.json();
+    buildGraph(allData);
+}
+
+function buildGraph(data) {
+    const vulnBySource = {};
+    data.edges.filter(e => e.type === 'EXPOSES').forEach(e => {
+        vulnBySource[e.source] = (vulnBySource[e.source] || 0) + 1;
+    });
+
+    const elements = {
+        nodes: data.nodes.map(n => ({
+            data: {
+                id: n.id,
+                name: n.name,
+                label: n.name.length > 20 ? n.name.slice(0, 18) + '…' : n.name,
+                type: n.type,
+                colour: nodeColour(n.type),
+                hasViolations: vulnBySource[n.id] ? 'true' : 'false',
+                violationCount: vulnBySource[n.id] || 0,
+                ...n.properties
+            }
+        })),
+        edges: data.edges.map(e => ({
+            data: { source: e.source, target: e.target, type: e.type }
+        }))
+    };
+
+    cy = cytoscape({
+        container: document.getElementById('cy'),
+        elements,
+        style: BASE_STYLES,
+        layout: { name: 'cose-bilkent', animate: false }
+    });
+
+    const vulnNodes = data.nodes.filter(n => n.type === 'VULNERABILITY');
+    document.getElementById('node-count').textContent = data.nodes.length;
+    document.getElementById('edge-count').textContent = data.edges.length;
+    document.getElementById('vuln-count').textContent = vulnNodes.length;
+    document.getElementById('loading').style.display = 'none';
+
+    setupInteractions();
+    buildFilters(data.nodes);
+    buildNodeList(data.nodes, vulnBySource);
+}
+
+// ─── Interactions ─────────────────────────────────────────────────────────────
+function setupInteractions() {
+    cy.on('tap', 'node', evt => {
+        const node = evt.target;
+        if (isBlastMode) runBlastRadius(node);
+        else showDetails(node);
+    });
+
+    cy.on('tap', evt => {
+        if (evt.target === cy) closeDetails();
+    });
+
+    // Buttons
+    document.getElementById('btn-layout').onclick = () =>
+        cy.layout({ name: 'cose-bilkent', animate: true }).run();
+
+    document.getElementById('btn-reset').onclick = resetView;
+
+    document.getElementById('btn-blast').onclick = () => {
+        isBlastMode = !isBlastMode;
+        const badge = document.getElementById('mode-badge');
+        const btn   = document.getElementById('btn-blast');
+        badge.textContent = 'Blast Radius';
+        badge.className   = isBlastMode ? 'visible blast-radius' : '';
+        btn.classList.toggle('active', isBlastMode);
+        if (!isBlastMode) cy.elements().removeClass('blast-target faded');
+    };
+
+    document.getElementById('btn-find-path').onclick = openFindPath;
+    document.getElementById('btn-find-path-go').onclick = runFindPath;
+    document.getElementById('btn-find-path-close').onclick = closeFindPath;
+    document.getElementById('modal-overlay').onclick = closeFindPath;
+
+    document.getElementById('btn-export-json').onclick = exportJSON;
+    document.getElementById('btn-export-csv').onclick  = exportCSV;
+
+    document.getElementById('btn-refresh').onclick = async () => {
+        const res = await fetch('/api/graph/delta');
+        const data = await res.json();
+        cy.json({ elements: {
+            nodes: data.nodes.map(n => ({ data: { id: n.id, name: n.name, type: n.type, colour: nodeColour(n.type) } })),
+            edges: data.edges.map(e => ({ data: { source: e.source, target: e.target, type: e.type } }))
+        }});
+        cy.layout({ name: 'cose-bilkent' }).run();
+    };
+
+    document.getElementById('details-close').onclick = closeDetails;
+
+    document.getElementById('theme-btn').onclick = toggleTheme;
+
+    // Search
+    document.getElementById('search-input').oninput = e => {
+        const val = e.target.value.trim().toLowerCase();
+        const hint = document.getElementById('search-hint');
+        if (!val) {
+            cy.elements().style('opacity', 1);
+            hint.textContent = '';
+            return;
         }
+        const matched = cy.nodes().filter(n => n.data('name').toLowerCase().includes(val));
+        cy.elements().addClass('faded').style('opacity', 0.08);
+        matched.removeClass('faded').style('opacity', 1).connectedEdges().removeClass('faded').style('opacity', 0.5);
+        hint.textContent = `${matched.length} match${matched.length !== 1 ? 'es' : ''}`;
+    };
 
-        function setupInteractions() {
-            cy.on('tap', 'node', (evt) => {
-                const node = evt.target;
-                if (isBlastMode) {
-                    runBlastRadius(node);
-                } else {
-                    showDetails(node);
-                }
-            });
-
-            document.getElementById('btn-layout').onclick = () => cy.layout({ name: 'cose-bilkent', animate: true }).run();
-            document.getElementById('btn-reset').onclick = () => {
-                cy.elements().removeClass('highlighted blast-target');
-                cy.fit();
-                isBlastMode = false;
-                document.getElementById('mode-badge').classList.remove('blast-radius');
-            };
-            document.getElementById('btn-blast').onclick = () => {
-                isBlastMode = !isBlastMode;
-                document.getElementById('mode-badge').classList.toggle('blast-radius', isBlastMode);
-                if (isBlastMode) alert("Blast Radius Mode: Click any node to see all transitive consumers.");
-            };
-            document.getElementById('btn-refresh').onclick = async () => {
-                const res = await fetch('/api/graph/delta');
-                const data = await res.json();
-                // Incremental update logic could go here, for now reload full
-                cy.json({ elements: { 
-                    nodes: data.nodes.map(n => ({ data: { id: n.id, name: n.name, type: n.type } })),
-                    edges: data.edges.map(e => ({ data: { source: e.source, target: e.target, type: e.type } }))
-                }});
-                cy.layout({ name: 'cose-bilkent' }).run();
-            };
-
-            // Search
-            document.getElementById('search-input').oninput = (e) => {
-                const val = e.target.value.toLowerCase();
-                if (!val) { cy.elements().style('opacity', 1); return; }
-                cy.elements().style('opacity', 0.1);
-                cy.nodes().filter(n => n.data('name').toLowerCase().includes(val)).style('opacity', 1).connectedEdges().style('opacity', 1);
-            };
+    // Keyboard shortcuts
+    document.addEventListener('keydown', e => {
+        if (e.target.tagName === 'INPUT') return;
+        switch (e.key.toLowerCase()) {
+            case '/': e.preventDefault(); document.getElementById('search-input').focus(); break;
+            case 'escape': closeDetails(); closeFindPath(); clearSearch(); break;
+            case 'b': document.getElementById('btn-blast').click(); break;
+            case 'p': openFindPath(); break;
+            case 'l': cy.layout({ name: 'cose-bilkent', animate: true }).run(); break;
+            case 't': toggleTheme(); break;
+            case 'r': resetView(); break;
         }
+    });
+}
 
-        function runBlastRadius(node) {
-            cy.elements().removeClass('blast-target');
-            // Find all nodes that depend on this node (incoming paths)
-            const collection = cy.elements().bfs({
-                root: node,
-                directed: true,
-                directedType: 'inbound' // What calls this?
-            }).path;
-            
-            collection.addClass('blast-target');
-            node.addClass('blast-target');
-            
-            const impactedCount = collection.nodes().length - 1;
-            logImpact(node.data('name'), impactedCount);
-        }
+// ─── Blast Radius ─────────────────────────────────────────────────────────────
+function runBlastRadius(node) {
+    cy.elements().removeClass('blast-target faded');
+    const collection = cy.elements().bfs({
+        root: node, directed: true, directedType: 'inbound'
+    }).path;
+    cy.elements().not(collection).not(node).addClass('faded');
+    collection.addClass('blast-target');
+    node.addClass('blast-target');
 
-        function showDetails(node) {
-            const panel = document.getElementById('details-panel');
-            panel.classList.add('visible');
-            document.getElementById('details-title').textContent = node.data('name');
-            let html = `<div style="font-size:12px; color:#8b949e; margin-bottom:12px;">Type: ${node.data('type')}</div>`;
-            
-            // Show properties
-            const props = node.data();
-            Object.keys(props).forEach(k => {
-                if (['id', 'name', 'type'].includes(k)) return;
-                html += `<div style="margin-bottom:8px;"><span style="color:#8b949e;">${k}:</span> <span style="font-family:monospace;">${props[k]}</span></div>`;
-            });
+    const count = collection.nodes().length - 1;
+    showImpactPanel(node.data('name'), count);
+}
 
-            document.getElementById('details-content').innerHTML = html;
-        }
+function showImpactPanel(name, count) {
+    document.getElementById('details-panel').classList.add('visible');
+    document.getElementById('details-title').textContent = 'Blast Radius: ' + name;
+    document.getElementById('details-content').innerHTML = `
+        <div style="text-align:center; padding:20px 0;">
+            <div style="font-size:48px; color:var(--danger); font-weight:bold;">${count}</div>
+            <div style="color:var(--text-muted); text-transform:uppercase; font-size:11px; margin-top:4px;">Impacted Nodes</div>
+            <p style="margin-top:16px; font-size:12px; color:var(--text-muted);">
+                A change to <b style="color:var(--text)">${name}</b> potentially affects
+                ${count} transitive consumer${count !== 1 ? 's' : ''} in the architecture.
+            </p>
+        </div>`;
+}
 
-        function logImpact(name, count) {
-            console.log(`Blast Radius for ${name}: ${count} impacted nodes.`);
-            const panel = document.getElementById('details-panel');
-            panel.classList.add('visible');
-            document.getElementById('details-title').textContent = "Impact: " + name;
-            document.getElementById('details-content').innerHTML = `
-                <div style="text-align:center; padding:20px;">
-                    <div style="font-size:48px; color:#f85149; font-weight:bold;">${count}</div>
-                    <div style="color:#8b949e; text-transform:uppercase; font-size:12px;">Impacted Nodes</div>
-                    <p style="margin-top:20px; font-size:13px;">A change to <b>${name}</b> potentially affects ${count} transitive consumers in the architecture.</p>
-                </div>
-            `;
-        }
+// ─── Node Details ─────────────────────────────────────────────────────────────
+function showDetails(node) {
+    document.getElementById('details-panel').classList.add('visible');
+    document.getElementById('details-title').textContent = node.data('name');
+    const props = node.data();
+    const type  = props.type || '';
+    let html = `<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
+        <span style="background:${nodeColour(type)};border-radius:4px;padding:2px 8px;font-size:11px;color:white">${type}</span>
+    </div>`;
 
-        function buildFilters(nodes) {
-            const types = [...new Set(nodes.map(n => n.type))];
-            const container = document.getElementById('type-filters');
-            types.forEach(type => {
-                const chip = document.createElement('span');
-                chip.className = 'chip active';
-                chip.textContent = type;
-                chip.onclick = () => {
-                    chip.classList.toggle('active');
-                    const visibleTypes = Array.from(document.querySelectorAll('.chip.active')).map(c => c.textContent);
-                    cy.nodes().forEach(n => {
-                        n.style('display', visibleTypes.includes(n.data('type')) ? 'element' : 'none');
-                    });
-                };
-                container.appendChild(chip);
-            });
-        }
+    const skip = new Set(['id', 'name', 'label', 'type', 'colour', 'hasViolations', 'violationCount']);
+    Object.keys(props).filter(k => !skip.has(k) && props[k]).forEach(k => {
+        html += `<div style="margin-bottom:6px;font-size:12px;">
+            <span style="color:var(--text-muted)">${k}: </span>
+            <span style="font-family:monospace;color:var(--text)">${props[k]}</span>
+        </div>`;
+    });
 
-        init();
-    </script>
+    const vc = props.violationCount;
+    if (vc > 0) {
+        html += `<div style="margin-top:12px;padding:8px;background:rgba(248,81,73,0.1);border-radius:6px;font-size:12px;color:var(--danger)">
+            ⚠ ${vc} violation${vc !== 1 ? 's' : ''} detected
+        </div>`;
+    }
+
+    const connectedEdges = node.connectedEdges();
+    if (connectedEdges.length) {
+        html += `<div style="margin-top:12px;font-size:11px;color:var(--text-muted);text-transform:uppercase;">Connections (${connectedEdges.length})</div>`;
+        const edgeTypes = {};
+        connectedEdges.forEach(e => {
+            const t = e.data('type');
+            edgeTypes[t] = (edgeTypes[t] || 0) + 1;
+        });
+        Object.entries(edgeTypes).forEach(([t, cnt]) => {
+            html += `<div style="font-size:12px;margin-top:4px;color:var(--text)">${t}: ${cnt}</div>`;
+        });
+    }
+
+    document.getElementById('details-content').innerHTML = html;
+}
+
+function closeDetails() {
+    document.getElementById('details-panel').classList.remove('visible');
+}
+
+// ─── Find Path ────────────────────────────────────────────────────────────────
+function openFindPath() {
+    document.getElementById('find-path-modal').classList.add('visible');
+    document.getElementById('modal-overlay').classList.add('visible');
+    document.getElementById('path-from').focus();
+}
+
+function closeFindPath() {
+    document.getElementById('find-path-modal').classList.remove('visible');
+    document.getElementById('modal-overlay').classList.remove('visible');
+    document.getElementById('path-result').textContent = '';
+    cy.elements().removeClass('path-target faded');
+}
+
+function runFindPath() {
+    const fromVal = document.getElementById('path-from').value.trim().toLowerCase();
+    const toVal   = document.getElementById('path-to').value.trim().toLowerCase();
+    const result  = document.getElementById('path-result');
+
+    const fromNode = cy.nodes().filter(n => n.data('name').toLowerCase().includes(fromVal)).first();
+    const toNode   = cy.nodes().filter(n => n.data('name').toLowerCase().includes(toVal)).first();
+
+    if (fromNode.empty() || toNode.empty()) {
+        result.textContent = 'Node not found. Try a partial name.';
+        return;
+    }
+
+    const dijkstra = cy.elements().dijkstra({ root: fromNode, directed: false });
+    const path = dijkstra.pathTo(toNode);
+
+    if (!path || path.length === 0) {
+        result.textContent = 'No path found between these nodes.';
+        return;
+    }
+
+    cy.elements().addClass('faded');
+    path.removeClass('faded').addClass('path-target');
+    result.textContent = `Path: ${path.nodes().map(n => n.data('name')).join(' → ')} (${path.edges().length} hops)`;
+}
+
+// ─── Export ───────────────────────────────────────────────────────────────────
+function visibleNodes() {
+    return cy.nodes().filter(n => n.style('display') !== 'none' && parseFloat(n.style('opacity')) > 0.2);
+}
+
+function exportJSON() {
+    const nodes = visibleNodes().map(n => ({
+        id: n.data('id'), name: n.data('name'), type: n.data('type'),
+        violationCount: n.data('violationCount'), ...Object.fromEntries(
+            Object.entries(n.data()).filter(([k]) => !['id','name','type','label','colour','hasViolations','violationCount'].includes(k))
+        )
+    }));
+    download('dede-export.json', JSON.stringify(nodes, null, 2), 'application/json');
+}
+
+function exportCSV() {
+    const nodes = visibleNodes();
+    const headers = ['id', 'name', 'type', 'violationCount'];
+    const rows = [headers.join(',')];
+    nodes.forEach(n => {
+        rows.push(headers.map(h => JSON.stringify(n.data(h) ?? '')).join(','));
+    });
+    download('dede-export.csv', rows.join('\n'), 'text/csv');
+}
+
+function download(filename, content, mime) {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([content], { type: mime }));
+    a.download = filename;
+    a.click();
+}
+
+// ─── Filters ──────────────────────────────────────────────────────────────────
+function buildFilters(nodes) {
+    const types = [...new Set(nodes.map(n => n.type))].sort();
+    const container = document.getElementById('type-filters');
+    types.forEach(type => {
+        const chip = document.createElement('span');
+        chip.className = 'chip active';
+        chip.textContent = type.replace(/_/g, ' ');
+        chip.dataset.type = type;
+        chip.style.borderLeft = `3px solid ${nodeColour(type)}`;
+        chip.onclick = () => {
+            chip.classList.toggle('active');
+            applyTypeFilter();
+        };
+        container.appendChild(chip);
+    });
+}
+
+function applyTypeFilter() {
+    const visibleTypes = new Set(
+        Array.from(document.querySelectorAll('.chip.active')).map(c => c.dataset.type)
+    );
+    cy.nodes().forEach(n => {
+        n.style('display', visibleTypes.has(n.data('type')) ? 'element' : 'none');
+    });
+}
+
+// ─── Node List ────────────────────────────────────────────────────────────────
+function buildNodeList(nodes, vulnBySource) {
+    const list = document.getElementById('node-list');
+    const sorted = [...nodes].sort((a, b) =>
+        (vulnBySource[b.id] || 0) - (vulnBySource[a.id] || 0));
+
+    sorted.forEach(n => {
+        const item = document.createElement('div');
+        item.className = 'node-item';
+        const vc = vulnBySource[n.id] || 0;
+        item.innerHTML = `
+            <span class="node-dot" style="background:${nodeColour(n.type)}"></span>
+            <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${n.name}">${n.name}</span>
+            ${vc > 0 ? `<span class="badge">${vc}</span>` : ''}
+        `;
+        item.onclick = () => {
+            const cyNode = cy.getElementById(n.id);
+            if (!cyNode.empty()) {
+                cy.animate({ center: { eles: cyNode }, zoom: 2 }, { duration: 400 });
+                showDetails(cyNode);
+            }
+        };
+        list.appendChild(item);
+    });
+}
+
+// ─── Theme ────────────────────────────────────────────────────────────────────
+function toggleTheme() {
+    const html = document.documentElement;
+    const isDark = html.getAttribute('data-theme') === 'dark';
+    html.setAttribute('data-theme', isDark ? 'light' : 'dark');
+    document.getElementById('theme-btn').textContent = isDark ? '🌙' : '☀';
+    // Update graph text colour
+    if (cy) {
+        cy.style().selector('node').style('color', isDark ? '#24292f' : '#c9d1d9').update();
+        cy.style().selector('edge').style('line-color', isDark ? '#d0d7de' : '#30363d').update();
+    }
+}
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+function resetView() {
+    cy.elements().removeClass('highlighted blast-target path-target faded').style('opacity', 1).style('display', 'element');
+    document.querySelectorAll('.chip').forEach(c => c.classList.add('active'));
+    clearSearch();
+    cy.fit();
+    isBlastMode = false;
+    document.getElementById('btn-blast').classList.remove('active');
+    document.getElementById('mode-badge').className = '';
+}
+
+function clearSearch() {
+    document.getElementById('search-input').value = '';
+    document.getElementById('search-hint').textContent = '';
+    if (cy) cy.elements().style('opacity', 1);
+}
+
+init();
+</script>
 </body>
 </html>

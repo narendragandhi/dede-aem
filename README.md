@@ -4,7 +4,7 @@ A static analysis tool for validating AEM codebase compatibility with AEM as a C
 
 [![Java Version](https://img.shields.io/badge/Java-21-blue)](https://openjdk.org/projects/jdk/21/)
 [![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.2.0-green)](https://spring.io/projects/spring-boot)
-[![Tests](https://img.shields.io/badge/Tests-188%20passing-brightgreen)]()
+[![Tests](https://img.shields.io/badge/Tests-228%20passing-brightgreen)]()
 [![Docker](https://img.shields.io/badge/ghcr.io-dede--java-blue)](https://github.com/features/packages)
 
 ---
@@ -105,6 +105,9 @@ Detects relationships between:
 - **Sling Models** → OSGi services, child resources, value injections
 - **OSGi Components** → Service providers and consumers (with LDAP filter + service.ranking resolution)
 - **Sling Jobs** → JobConsumer `@JobConsumer(slingJobTopics)` and `JobManager.addJob()` topology
+- **Workflow Models** → Steps, legacy `WorkflowProcess` implementations (CST-6 violations flagged)
+- **Dispatcher Configs** → Filter rules, security anti-patterns, farm definitions, cache/rewrite sections
+- **Content Packages** → ACL issues, vanity URLs, workflow launchers, cloud-incompatible paths
 - **Packages** → Classes → Methods
 
 ### OSGi Service Resolution
@@ -390,7 +393,7 @@ graph TD
 ## Development
 
 ```bash
-# Run tests (188 tests)
+# Run tests (228 tests)
 mvn test
 
 # Run with coverage

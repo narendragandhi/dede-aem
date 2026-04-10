@@ -80,41 +80,74 @@ public class GraphAgentSkills {
         }
 
         // 6. Detect Zombie Resource Types (Code exists but not in Content)
-        // Only flag resource types that have NO relationships at all (truly orphaned)
+        // Build a set of resource type names that are used as sling:resourceSuperType
+        // by any other node in the graph — these are abstract supertypes, not zombies.
+        Set<String> usedAsSuperType = graphService.getAllNodes().stream()
+            .filter(n -> n.getProperties().containsKey("sling:resourceSuperType"))
+            .map(n -> n.getProperties().get("sling:resourceSuperType"))
+            .collect(Collectors.toSet());
+
+        // Build prefix set: if "core/wcm/components/text" exists, then "core",
+        // "core/wcm", and "core/wcm/components" are namespace containers, not zombies.
+        Set<String> namespacePrefixes = graphService.getAllNodes().stream()
+            .filter(n -> n.getType() == NodeType.JCR_RESOURCE_TYPE)
+            .map(CodeNode::getName)
+            .filter(name -> name.contains("/"))
+            .flatMap(name -> {
+                List<String> prefixes = new ArrayList<>();
+                int idx = name.indexOf('/');
+                while (idx != -1) {
+                    prefixes.add(name.substring(0, idx));
+                    idx = name.indexOf('/', idx + 1);
+                }
+                return prefixes.stream();
+            })
+            .collect(Collectors.toSet());
+
         graphService.getAllNodes().stream()
             .filter(n -> n.getType() == NodeType.JCR_RESOURCE_TYPE)
             .filter(res -> !"true".equals(res.getProperties().get("isExported")))
-            .filter(res -> !"true".equals(res.getProperties().get("isProxy"))) // Skip proxy components
+            .filter(res -> !"true".equals(res.getProperties().get("isProxy")))
             .filter(res -> {
-                // Skip if this resource type has ANY outgoing relationships (DEFINES HTL, EXTENDS supertype, etc.)
-                Set<CodeNode> outgoing = graphService.getOutgoingNodes(res);
-                if (!outgoing.isEmpty()) return false;
-
-                // Skip if this resource type is REFERENCED by HTL (data-sly-resource) or has incoming edges
-                Set<CodeNode> incoming = graphService.getIncomingNodes(res);
-                if (!incoming.isEmpty()) return false;
-
-                // Skip common AEM patterns that are valid without explicit references
                 String name = res.getName();
+
+                // Skip namespace container paths (prefix of another resource type)
+                if (namespacePrefixes.contains(name)) return false;
+
+                // Skip versioned abstract supertypes: path ends with /v<N>
+                if (name.matches(".*/v\\d+$")) return false;
+
+                // Skip resource types used as sling:resourceSuperType elsewhere
+                if (usedAsSuperType.contains(name)) return false;
+
+                // Skip if this node has ANY graph relationships (HTL defines it, EXTENDS it, etc.)
+                if (!graphService.getOutgoingNodes(res).isEmpty()) return false;
+                if (!graphService.getIncomingNodes(res).isEmpty()) return false;
+
+                // Skip well-known AEM structural patterns that are never directly instantiated
                 if (name.contains("_cq_dialog") || name.contains("_cq_design_dialog") ||
                     name.contains("_cq_editConfig") || name.contains("_cq_template") ||
+                    name.contains("_cq_htmlTag") ||   // HTML tag wrapper nodes
                     name.contains("clientlibs") || name.contains("/i18n") ||
-                    name.contains("/new") || // Container "new" placeholders
-                    name.contains("/form/") || // Form components are often unused in simple projects
-                    name.endsWith(".json") || name.endsWith(".dir")) {
+                    name.contains("/new") || name.contains("/form/") ||
+                    name.endsWith(".json") || name.endsWith(".dir") ||
+                    name.contains("dialog") ||                             // Granite UI dialogs (any position)
+                    name.contains("/editor/") || name.endsWith("/edit")) {  // Touch UI edit overlays
                     return false;
                 }
 
-                // Skip components that extend a supertype (proxy pattern)
-                if (res.getProperties().containsKey("sling:resourceSuperType")) {
-                    return false;
-                }
+                // Skip components that declare a supertype themselves
+                if (res.getProperties().containsKey("sling:resourceSuperType")) return false;
+
+                // Require at least 4 path segments — anything shorter is a namespace
+                if (name.split("/").length < 4) return false;
 
                 return true;
             })
-            .limit(5) // Limit noise further
+            .limit(5)
             .forEach(res -> {
-                suggestions.add("REFACTOR [Zombie Code]: ResourceType '" + res.getName() + "' is defined in code but never instantiated in JCR content or HTL.");
+                suggestions.add("REFACTOR [Zombie Code]: ResourceType '" + res.getName() +
+                    "' is defined in code but never instantiated in JCR content or HTL.");
             });
 
         return suggestions;

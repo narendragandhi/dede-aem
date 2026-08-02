@@ -14,8 +14,8 @@ Thank you for your interest in contributing to Dede-Java! This document provides
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-org/dede-java.git
-cd dede-java
+git clone https://github.com/narendragandhi/dede-aem.git
+cd dede-aem
 
 # Build with Maven
 mvn clean package

@@ -263,16 +263,16 @@ java -jar dede.jar /project --profiles aem,myprofile
 
 ```bash
 # Pull from GitHub Container Registry
-docker pull ghcr.io/your-org/dede-java:latest
+docker pull ghcr.io/narendragandhi/dede-aem:latest
 
 # Run against a project
 docker run --rm \
   -v /path/to/aem-project:/scan:ro \
   -p 8080:8080 \
-  ghcr.io/your-org/dede-java:latest /scan
+  ghcr.io/narendragandhi/dede-aem:latest /scan
 
 # Run as API server
-docker run -p 8080:8080 ghcr.io/your-org/dede-java:latest
+docker run -p 8080:8080 ghcr.io/narendragandhi/dede-aem:latest
 ```
 
 ### Docker Compose
@@ -280,7 +280,7 @@ docker run -p 8080:8080 ghcr.io/your-org/dede-java:latest
 ```yaml
 services:
   dede:
-    image: ghcr.io/your-org/dede-java:latest
+    image: ghcr.io/narendragandhi/dede-aem:latest
     ports:
       - "8080:8080"
     volumes:

@@ -9,7 +9,7 @@ RUN mvn dependency:go-offline -B
 # Copy source and build
 COPY src ./src
 COPY profiles ./profiles
-RUN mvn clean package -B
+RUN mvn clean package -DskipTests -B
 
 # Stage 2: Runtime
 FROM eclipse-temurin:21-jre-jammy

@@ -26,7 +26,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Run Dede-Java Analysis
-        uses: docker://ghcr.io/your-org/dede-java:latest
+        uses: docker://ghcr.io/narendragandhi/dede-aem:latest
         with:
           args: >
             /github/workspace
@@ -75,7 +75,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Run Full Analysis
-        uses: docker://ghcr.io/your-org/dede-java:latest
+        uses: docker://ghcr.io/narendragandhi/dede-aem:latest
         with:
           args: >
             /github/workspace
@@ -123,7 +123,7 @@ jobs:
 #
 #       - name: Download Dede-Java
 #         run: |
-#           curl -L https://github.com/your-org/dede-java/releases/latest/download/dede-java-exec.jar -o dede.jar
+#           curl -L https://github.com/narendragandhi/dede-aem/releases/latest/download/dede-java-exec.jar -o dede.jar
 #
 #       - name: Run Analysis
 #         run: |

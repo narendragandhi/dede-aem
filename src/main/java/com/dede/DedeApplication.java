@@ -15,6 +15,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.context.annotation.Bean;
 
 import java.io.File;
@@ -36,11 +37,18 @@ public class DedeApplication {
                                              GraphService graphService, GovernanceEngine governance,
                                              VulnerabilityService security, GraphAgentSkills agent,
                                              OsgiLinker osgiLinker, DeltaAnalyzer deltaAnalyzer,
-                                             CloudReadinessAnalyzer cloudAnalyzer, BpaReportGenerator bpaGenerator) {
+                                             CloudReadinessAnalyzer cloudAnalyzer, BpaReportGenerator bpaGenerator,
+                                             ConfigurableApplicationContext context) {
         return args -> {
-            if (args.length == 0 || "--help".equals(args[0]) || "-h".equals(args[0])) {
+            if (args.length == 0) {
+                // No args: stay up as the REST/GraphQL/Web UI server.
                 printHelp();
                 return;
+            }
+
+            if ("--help".equals(args[0]) || "-h".equals(args[0])) {
+                printHelp();
+                System.exit(SpringApplication.exit(context, () -> 0));
             }
 
             String projectPath = args[0];
@@ -176,6 +184,8 @@ public class DedeApplication {
 
             if (watchMode) {
                 scanner.startWatching(projectPath);
+            } else {
+                System.exit(SpringApplication.exit(context, () -> 0));
             }
         };
     }

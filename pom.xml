@@ -17,7 +17,7 @@
     
     <properties>
         <java.version>21</java.version>
-        <javaparser.version>3.25.7</javaparser.version>
+        <javaparser.version>3.28.2</javaparser.version>
         <jgrapht.version>1.5.2</jgrapht.version>
         <oakpal.version>2.3.0</oakpal.version>
     </properties>

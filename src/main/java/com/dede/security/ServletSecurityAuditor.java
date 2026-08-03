@@ -5,6 +5,7 @@ import com.dede.domain.model.CodeNode;
 import com.dede.domain.model.NodeType;
 import com.dede.domain.model.RelationshipType;
 import com.github.javaparser.JavaParser;
+import com.github.javaparser.ParserConfiguration;
 import com.github.javaparser.ast.CompilationUnit;
 import com.github.javaparser.ast.body.MethodDeclaration;
 import org.slf4j.Logger;
@@ -121,7 +122,8 @@ public class ServletSecurityAuditor {
 
         try {
             String source = Files.readString(sourceFile);
-            var parseResult = new JavaParser().parse(source);
+            var parseResult = new JavaParser(new ParserConfiguration()
+                .setLanguageLevel(ParserConfiguration.LanguageLevel.BLEEDING_EDGE)).parse(source);
             if (!parseResult.isSuccessful() || parseResult.getResult().isEmpty()) return findings;
 
             CompilationUnit cu = parseResult.getResult().get();

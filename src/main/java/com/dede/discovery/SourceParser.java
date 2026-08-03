@@ -6,6 +6,7 @@ import com.dede.exception.ErrorCode;
 import com.dede.exception.ParseException;
 import com.dede.exception.ConfigurationException;
 import com.github.javaparser.JavaParser;
+import com.github.javaparser.ParserConfiguration;
 import com.github.javaparser.ParseResult;
 import com.github.javaparser.ast.CompilationUnit;
 import com.github.javaparser.ast.body.ClassOrInterfaceDeclaration;
@@ -36,7 +37,12 @@ public class SourceParser implements ProjectParser {
 
     public SourceParser(GraphService graphService) {
         this.graphService = graphService;
-        this.javaParser = new JavaParser();
+        // BLEEDING_EDGE: the default ParserConfiguration silently rejects records,
+        // switch expressions, pattern-matching instanceof, text blocks, and sealed
+        // classes (Java 14+), which blinds this parser -- the core class/graph
+        // builder -- on any modern AEM Cloud Service project.
+        this.javaParser = new JavaParser(new ParserConfiguration()
+            .setLanguageLevel(ParserConfiguration.LanguageLevel.BLEEDING_EDGE));
         this.objectMapper = new ObjectMapper();
         loadDefaultProfile();
     }

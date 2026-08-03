@@ -5,6 +5,7 @@ import com.dede.domain.model.CodeNode;
 import com.dede.domain.model.NodeType;
 import com.dede.domain.model.RelationshipType;
 import com.github.javaparser.JavaParser;
+import com.github.javaparser.ParserConfiguration;
 import com.github.javaparser.ParseResult;
 import com.github.javaparser.ast.CompilationUnit;
 import com.github.javaparser.ast.ImportDeclaration;
@@ -41,9 +42,19 @@ public class ForbiddenApiScanner {
         this.catalog = catalog;
     }
 
-    /** Create a new JavaParser per call — JavaParser is not thread-safe. */
+    /**
+     * Create a new JavaParser per call — JavaParser is not thread-safe.
+     *
+     * The default ParserConfiguration's language level rejects records, switch
+     * expressions, pattern-matching instanceof, text blocks, and sealed classes
+     * (silently: parse() just returns unsuccessful, no exception), which is most
+     * Java 14+ syntax -- i.e. most real AEM projects, and this codebase's own
+     * source. BLEEDING_EDGE accepts the widest syntax range so scanning doesn't
+     * go blind on a project just because of the Java version it targets.
+     */
     private JavaParser newParser() {
-        return new JavaParser();
+        return new JavaParser(new ParserConfiguration()
+            .setLanguageLevel(ParserConfiguration.LanguageLevel.BLEEDING_EDGE));
     }
 
     /**

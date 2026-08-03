@@ -5,6 +5,7 @@ import com.dede.domain.model.CodeNode;
 import com.dede.domain.model.NodeType;
 import com.dede.domain.model.RelationshipType;
 import com.github.javaparser.JavaParser;
+import com.github.javaparser.ParserConfiguration;
 import com.github.javaparser.ast.CompilationUnit;
 import com.github.javaparser.ast.body.ClassOrInterfaceDeclaration;
 import com.github.javaparser.ast.expr.AnnotationExpr;
@@ -48,7 +49,8 @@ public class SlingJobParser implements ProjectParser {
 
     public SlingJobParser(GraphService graphService) {
         this.graphService = graphService;
-        this.javaParser   = new JavaParser();
+        this.javaParser   = new JavaParser(new ParserConfiguration()
+            .setLanguageLevel(ParserConfiguration.LanguageLevel.BLEEDING_EDGE));
     }
 
     @Override

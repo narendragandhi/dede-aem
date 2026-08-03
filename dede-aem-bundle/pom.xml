@@ -16,7 +16,7 @@
         <maven.compiler.source>11</maven.compiler.source>
         <maven.compiler.target>11</maven.compiler.target>
         <aem.version>6.5.0</aem.version>
-        <sling.api.version>2.25.4</sling.api.version>
+        <sling.api.version>3.0.2</sling.api.version>
     </properties>
 
     <dependencies>

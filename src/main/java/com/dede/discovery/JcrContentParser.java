@@ -4,6 +4,7 @@ import com.dede.domain.GraphService;
 import com.dede.domain.model.CodeNode;
 import com.dede.domain.model.NodeType;
 import com.dede.domain.model.RelationshipType;
+import com.dede.security.XmlSecurity;
 import org.springframework.stereotype.Component;
 import org.w3c.dom.Document;
 import org.w3c.dom.NamedNodeMap;
@@ -23,18 +24,7 @@ public class JcrContentParser implements ProjectParser {
 
     public JcrContentParser(GraphService graphService) {
         this.graphService = graphService;
-        this.factory = DocumentBuilderFactory.newInstance();
-        
-        // SECURITY HARDENING: Prevent XXE
-        try {
-            factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
-            factory.setFeature("http://xml.org/sax/features/external-general-entities", false);
-            factory.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
-            factory.setXIncludeAware(false);
-            factory.setExpandEntityReferences(false);
-        } catch (Exception e) {
-            System.err.println("Failed to configure secure XML parser");
-        }
+        this.factory = XmlSecurity.newSafeDocumentBuilderFactory();
     }
 
     @Override

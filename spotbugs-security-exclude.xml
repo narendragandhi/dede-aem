@@ -1,0 +1,136 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Exclusions within the SECURITY category (see spotbugs-security-include.xml for the
+  category scoping). Two kinds of exclusion below, deliberately kept separate so this
+  file stays an honest, reviewable record of what's been triaged and why:
+
+  1. Wholesale, by bug pattern (CRLF_INJECTION_LOGS, SPRING_ENDPOINT, IMPROPER_UNICODE):
+     lower-severity or high-noise categories, deferred as backlog rather than fixed now.
+     Excluding by pattern means a new instance won't be caught either; an explicit
+     scoping tradeoff, not a silent one.
+
+  2. Precise, by class (REDOS, XXE_DOCUMENT, POTENTIAL_XML_INJECTION,
+     PATH_TRAVERSAL_IN): scoped to the specific classes that were audited and either
+     fixed and verified safe, or manually reviewed as false positives. A new class
+     introducing an unhardened DocumentBuilderFactory, an unescaped HTML sink, a
+     catastrophic backtracking regex, or a web reachable path traversal will still fail
+     the build; that's the actual point of this gate.
+-->
+<FindBugsFilter>
+    <!-- Deferred as backlog: high volume (125 CRLF_INJECTION_LOGS + 19 SPRING_ENDPOINT
+         + 7 IMPROPER_UNICODE across the codebase), low severity for a local/CI batch
+         tool that isn't reflecting raw untrusted HTTP headers into logs. -->
+    <Match>
+        <Bug pattern="CRLF_INJECTION_LOGS"/>
+    </Match>
+    <Match>
+        <Bug pattern="SPRING_ENDPOINT"/>
+    </Match>
+    <Match>
+        <Bug pattern="IMPROPER_UNICODE"/>
+    </Match>
+
+    <!-- REDOS: 3 of 8 originally flagged patterns (SlingHtlParser's SLY_TEST/LIST/REPEAT)
+         had a genuine overlapping quantifier ambiguity and were fixed with possessive
+         quantifiers (see SlingHtlParser.java). These remaining classes were manually
+         reviewed and have no nested or overlapping quantifiers: single greedy/lazy
+         groups bounded by required literal delimiters, so they don't exhibit
+         catastrophic or polynomial backtracking. Deferred as backlog given FindSecBugs'
+         REDOS detector is a blunt heuristic that flags most multi-quantifier regexes
+         regardless of actual ambiguity. -->
+    <Match>
+        <Class name="com.dede.cloud.OsgiConfigCheck"/>
+        <Bug pattern="REDOS"/>
+    </Match>
+    <Match>
+        <Class name="com.dede.discovery.OsgiConfigParser"/>
+        <Bug pattern="REDOS"/>
+    </Match>
+    <Match>
+        <Class name="com.dede.discovery.SlingHtlParser"/>
+        <Bug pattern="REDOS"/>
+    </Match>
+    <Match>
+        <Class name="com.dede.security.ServiceUserAnalyzer"/>
+        <Bug pattern="REDOS"/>
+    </Match>
+    <Match>
+        <Class name="com.dede.security.XssDetector"/>
+        <Bug pattern="REDOS"/>
+    </Match>
+
+    <!-- XXE_DOCUMENT: all 8 originally flagged sites now go through
+         XmlSecurity.newSafeDocumentBuilderFactory() (disallow-doctype-decl, external
+         entities off, XInclude off). FindSecBugs' XXE detector doesn't do cross-method
+         taint tracking, so it can't verify hardening applied in a constructor and used
+         later in a different method. These are verified false positives, not accepted
+         risk. -->
+    <Match>
+        <Class name="com.dede.security.AclAnalyzer"/>
+        <Bug pattern="XXE_DOCUMENT"/>
+    </Match>
+    <Match>
+        <Class name="com.dede.discovery.ContentPackageScanner"/>
+        <Bug pattern="XXE_DOCUMENT"/>
+    </Match>
+    <Match>
+        <Class name="com.dede.discovery.JcrContentParser"/>
+        <Bug pattern="XXE_DOCUMENT"/>
+    </Match>
+    <Match>
+        <Class name="com.dede.discovery.OsgiServiceParser"/>
+        <Bug pattern="XXE_DOCUMENT"/>
+    </Match>
+    <Match>
+        <Class name="com.dede.discovery.SlingClientLibParser"/>
+        <Bug pattern="XXE_DOCUMENT"/>
+    </Match>
+    <Match>
+        <Class name="com.dede.discovery.SlingResourceParser"/>
+        <Bug pattern="XXE_DOCUMENT"/>
+    </Match>
+    <Match>
+        <Class name="com.dede.discovery.WorkflowModelParser"/>
+        <Bug pattern="XXE_DOCUMENT"/>
+    </Match>
+
+    <!-- POTENTIAL_XML_INJECTION: both sites now escape the only untrusted value
+         (report.getProjectName(), attacker-controlled via the unauthenticated
+         RequestParam on /api/analysis/bpa-report/html) via escapeHtml(). FindSecBugs
+         flags any StringBuilder.append inside XML/HTML-shaped output regardless of
+         per-argument escaping. Verified false positive. -->
+    <Match>
+        <Class name="com.dede.api.AnalysisController"/>
+        <Bug pattern="POTENTIAL_XML_INJECTION"/>
+    </Match>
+    <Match>
+        <Class name="com.dede.cloud.BpaReportGenerator"/>
+        <Bug pattern="POTENTIAL_XML_INJECTION"/>
+    </Match>
+
+    <!-- PATH_TRAVERSAL_IN: verified. All 9 sites build paths from the operator's own
+         project path CLI argument (or files discovered while walking that operator
+         chosen tree), never from content parsed out of a scanned package. This is the
+         tool's designed function (read whatever directory you point it at), not a
+         second-order traversal from untrusted package content. -->
+    <Match>
+        <Class name="com.dede.DedeApplication"/>
+        <Bug pattern="PATH_TRAVERSAL_IN"/>
+    </Match>
+    <Match>
+        <Class name="com.dede.discovery.DedeOsgiScanner"/>
+        <Bug pattern="PATH_TRAVERSAL_IN"/>
+    </Match>
+    <Match>
+        <Class name="com.dede.discovery.OsgiManifestParser"/>
+        <Bug pattern="PATH_TRAVERSAL_IN"/>
+    </Match>
+    <Match>
+        <Class name="com.dede.discovery.ProjectScanner"/>
+        <Bug pattern="PATH_TRAVERSAL_IN"/>
+    </Match>
+    <Match>
+        <Class name="com.dede.discovery.SourceParser"/>
+        <Bug pattern="PATH_TRAVERSAL_IN"/>
+    </Match>
+</FindBugsFilter>

@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Restricts the SpotBugs `check` goal (wired to CI's Code Quality job) to the
+  FindSecBugs security rule set. This is a security gate, not a general code-quality
+  gate: the ~200 pre-existing BAD_PRACTICE/STYLE/MALICIOUS_CODE findings (EI_EXPOSE_REP,
+  VA_FORMAT_STRING_USES_NEWLINE, etc.) are real but out of scope here and were never
+  triaged; gating the build on them now would just make CI permanently red on unrelated
+  findings. Only FindSecBugs' SECURITY category (injection, weak crypto, SSRF, path
+  traversal, hardcoded secrets, XXE, ...) can fail the build. See
+  spotbugs-security-exclude.xml for the specific findings within that category that
+  have been triaged (fixed-and-verified false positives, or deferred backlog).
+-->
+<FindBugsFilter>
+    <Match>
+        <Bug category="SECURITY"/>
+    </Match>
+</FindBugsFilter>

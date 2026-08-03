@@ -1,5 +1,6 @@
 package com.dede.discovery;
 
+import com.dede.security.XmlSecurity;
 import org.springframework.stereotype.Component;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
@@ -19,7 +20,7 @@ public class OsgiServiceParser {
     public List<String> parseProvidedServices(InputStream is) {
         List<String> services = new ArrayList<>();
         try {
-            DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
+            DocumentBuilderFactory factory = XmlSecurity.newSafeDocumentBuilderFactory();
             DocumentBuilder builder = factory.newDocumentBuilder();
             Document doc = builder.parse(is);
 
@@ -41,7 +42,7 @@ public class OsgiServiceParser {
     public List<String> parseConsumedServices(InputStream is) {
         List<String> services = new ArrayList<>();
         try {
-            DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
+            DocumentBuilderFactory factory = XmlSecurity.newSafeDocumentBuilderFactory();
             DocumentBuilder builder = factory.newDocumentBuilder();
             Document doc = builder.parse(is);
 

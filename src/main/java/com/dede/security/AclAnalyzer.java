@@ -46,16 +46,7 @@ public class AclAnalyzer {
     private final DocumentBuilderFactory docBuilderFactory;
 
     public AclAnalyzer() {
-        this.docBuilderFactory = DocumentBuilderFactory.newInstance();
-        // Harden against XXE
-        try {
-            docBuilderFactory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
-            docBuilderFactory.setFeature("http://xml.org/sax/features/external-general-entities", false);
-            docBuilderFactory.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
-        } catch (Exception e) {
-            log.warn("Could not configure XXE hardening on DocumentBuilderFactory", e);
-        }
-        docBuilderFactory.setExpandEntityReferences(false);
+        this.docBuilderFactory = XmlSecurity.newSafeDocumentBuilderFactory();
         docBuilderFactory.setNamespaceAware(true);
     }
 

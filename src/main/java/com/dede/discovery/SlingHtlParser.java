@@ -67,16 +67,21 @@ public class SlingHtlParser {
 
     // Matches data-sly-test conditions: data-sly-test="${condition}" or data-sly-test.varName="${expr}"
     // Handles negation: data-sly-test="${!byline.empty}"
+    // Trailing \s*+ is possessive: without it, \s* and the preceding lazy [^}]+?
+    // both match whitespace, so malformed/attacker-crafted input (no closing "}\"")
+    // makes the engine retry many ways to split the same whitespace run between
+    // them (ReDoS). Possessive quantifiers don't backtrack, closing that off
+    // without changing the match result for well-formed HTL.
     private static final Pattern SLY_TEST_PATTERN = Pattern.compile(
-        "data-sly-test(?:\\.([a-zA-Z0-9_]+))?\\s*=\\s*\"\\$\\{\\s*([^}]+?)\\s*\\}\"");
+        "data-sly-test(?:\\.([a-zA-Z0-9_]+))?\\s*=\\s*\"\\$\\{\\s*([^}]+?)\\s*+\\}\"");
 
     // Matches data-sly-list: data-sly-list.item="${model.items}"
     private static final Pattern SLY_LIST_PATTERN = Pattern.compile(
-        "data-sly-list(?:\\.([a-zA-Z0-9_]+))?\\s*=\\s*\"\\$\\{\\s*([^}]+?)\\s*\\}\"");
+        "data-sly-list(?:\\.([a-zA-Z0-9_]+))?\\s*=\\s*\"\\$\\{\\s*([^}]+?)\\s*+\\}\"");
 
     // Matches data-sly-repeat: data-sly-repeat.item="${model.items}"
     private static final Pattern SLY_REPEAT_PATTERN = Pattern.compile(
-        "data-sly-repeat(?:\\.([a-zA-Z0-9_]+))?\\s*=\\s*\"\\$\\{\\s*([^}]+?)\\s*\\}\"");
+        "data-sly-repeat(?:\\.([a-zA-Z0-9_]+))?\\s*=\\s*\"\\$\\{\\s*([^}]+?)\\s*+\\}\"");
 
     // Matches HTL expressions: ${expression}
     private static final Pattern EXPRESSION_PATTERN = Pattern.compile(

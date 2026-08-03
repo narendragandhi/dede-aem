@@ -4,6 +4,7 @@ import com.dede.domain.GraphService;
 import com.dede.domain.model.CodeNode;
 import com.dede.domain.model.NodeType;
 import com.dede.domain.model.RelationshipType;
+import com.dede.security.XmlSecurity;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -66,18 +67,7 @@ public class ContentPackageScanner {
 
     public ContentPackageScanner(GraphService graphService) {
         this.graphService = graphService;
-        this.factory = DocumentBuilderFactory.newInstance();
-
-        // Security hardening
-        try {
-            factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
-            factory.setFeature("http://xml.org/sax/features/external-general-entities", false);
-            factory.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
-            factory.setXIncludeAware(false);
-            factory.setExpandEntityReferences(false);
-        } catch (Exception e) {
-            log.warn("Failed to configure secure XML parser", e);
-        }
+        this.factory = XmlSecurity.newSafeDocumentBuilderFactory();
     }
 
     /**

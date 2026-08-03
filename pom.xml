@@ -185,6 +185,49 @@
                     <reportOutputDirectory>${project.build.directory}/apidocs</reportOutputDirectory>
                 </configuration>
             </plugin>
+
+            <!-- Security-focused static analysis: SpotBugs + FindSecBugs.
+                 Scoped to the FindSecBugs security rule set only (via includeFilterFile) so this
+                 gates on real vulnerability patterns (injection, weak crypto, SSRF, path traversal,
+                 hardcoded secrets, etc.) rather than the ~200 pre-existing encapsulation/style
+                 findings (EI_EXPOSE_REP, VA_FORMAT_STRING_USES_NEWLINE, ...) that are unrelated
+                 to security and were never triaged. -->
+            <plugin>
+                <groupId>com.github.spotbugs</groupId>
+                <artifactId>spotbugs-maven-plugin</artifactId>
+                <version>4.8.6.4</version>
+                <configuration>
+                    <effort>Max</effort>
+                    <threshold>Low</threshold>
+                    <failOnError>true</failOnError>
+                    <includeFilterFile>${project.basedir}/spotbugs-security-include.xml</includeFilterFile>
+                    <excludeFilterFile>${project.basedir}/spotbugs-security-exclude.xml</excludeFilterFile>
+                    <plugins>
+                        <plugin>
+                            <groupId>com.h3xstream.findsecbugs</groupId>
+                            <artifactId>findsecbugs-plugin</artifactId>
+                            <version>1.13.0</version>
+                        </plugin>
+                    </plugins>
+                </configuration>
+            </plugin>
+
+            <!-- Dependency vulnerability scanning. Fails the build on High/Critical (CVSS >= 7)
+                 findings; Medium/Low are reported but don't block. Requires an NVD_API_KEY env var
+                 in CI or the NVD data-feed download is heavily rate-limited by NIST. -->
+            <plugin>
+                <groupId>org.owasp</groupId>
+                <artifactId>dependency-check-maven</artifactId>
+                <version>9.0.9</version>
+                <configuration>
+                    <failBuildOnCVSS>7</failBuildOnCVSS>
+                    <nvdApiKey>${env.NVD_API_KEY}</nvdApiKey>
+                    <formats>
+                        <format>HTML</format>
+                        <format>JSON</format>
+                    </formats>
+                </configuration>
+            </plugin>
         </plugins>
     </build>
 </project>

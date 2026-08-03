@@ -396,7 +396,7 @@ public class AnalysisController {
                             <div class="label">Major</div>
                         </div>
                     </div>
-            """, report.getProjectName(), summary.getCloudReadinessScore(),
+            """, escapeHtml(report.getProjectName()), summary.getCloudReadinessScore(),
                  summary.getBlockers(), summary.getCritical(), summary.getMajor()));
 
         html.append("<div class=\"findings-section\"><h2>Findings</h2>");
@@ -432,6 +432,8 @@ public class AnalysisController {
         if (text == null) return "";
         return text.replace("&", "&amp;")
                    .replace("<", "&lt;")
-                   .replace(">", "&gt;");
+                   .replace(">", "&gt;")
+                   .replace("\"", "&quot;")
+                   .replace("'", "&#39;");
     }
 }

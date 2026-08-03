@@ -4,6 +4,7 @@ import com.dede.domain.GraphService;
 import com.dede.domain.model.CodeNode;
 import com.dede.domain.model.NodeType;
 import com.dede.domain.model.RelationshipType;
+import com.dede.security.XmlSecurity;
 import org.springframework.stereotype.Component;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
@@ -26,7 +27,7 @@ public class SlingClientLibParser {
 
     public void parse(Path contentXmlPath) {
         try (InputStream is = Files.newInputStream(contentXmlPath)) {
-            DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
+            DocumentBuilderFactory factory = XmlSecurity.newSafeDocumentBuilderFactory();
             DocumentBuilder builder = factory.newDocumentBuilder();
             Document doc = builder.parse(is);
 

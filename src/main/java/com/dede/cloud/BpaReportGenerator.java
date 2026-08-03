@@ -462,7 +462,7 @@ public class BpaReportGenerator {
                             <div>Generated: %s</div>
                         </div>
                     </header>
-            """, report.getProjectName(),
+            """, escapeHtml(report.getProjectName()),
                  LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"))));
 
         // Summary cards
@@ -574,7 +574,8 @@ public class BpaReportGenerator {
         return text.replace("&", "&amp;")
                    .replace("<", "&lt;")
                    .replace(">", "&gt;")
-                   .replace("\"", "&quot;");
+                   .replace("\"", "&quot;")
+                   .replace("'", "&#39;");
     }
 
     // --- DTOs ---

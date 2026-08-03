@@ -75,10 +75,11 @@ java -jar target/dede-java-0.0.1-SNAPSHOT-exec.jar /path/to/aem-project --dot ou
 Usage: dede <project-path> [options]
 
 Options:
-  --profiles <p1,p2>  Analysis profiles (default: aem)
-  --dot <path.dot>    Export dependency graph to DOT format
-  --json <path.json>  Export results to JSON
-  --security          Enable security surface audit
+  --profiles <p1,p2>       Analysis profiles (default: aem)
+  --dot <path.dot>         Export dependency graph to DOT format
+  --json <path.json>       Export results to JSON
+  --security               Enable security surface audit
+  --sarif <path.sarif.json> Export forbidden-API findings as SARIF 2.1.0
 ```
 
 ---
@@ -159,6 +160,22 @@ dot -Tpng architecture.dot -o architecture.png
     "edges": 14
   }
 }
+```
+
+### SARIF Report
+
+SARIF 2.1.0, consumed natively by GitHub Code Scanning, VS Code's Problems panel, and most SIEMs. The same serializer already backs the REST API's `/api/analysis/supply-chain/sarif` endpoint.
+
+```bash
+java -jar dede.jar /project --sarif dede-findings.sarif.json
+```
+
+```yaml
+# GitHub Actions: upload findings to the Security tab
+- name: Upload SARIF
+  uses: github/codeql-action/upload-sarif@v3
+  with:
+    sarif_file: dede-findings.sarif.json
 ```
 
 ---

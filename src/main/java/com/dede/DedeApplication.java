@@ -10,6 +10,10 @@ import com.dede.intelligence.VulnerabilityService;
 import com.dede.intelligence.GraphAgentSkills;
 import com.dede.intelligence.CloudReadinessAnalyzer;
 import com.dede.cloud.BpaReportGenerator;
+import com.dede.cloud.ForbiddenApiScanner;
+import com.dede.cloud.SarifReport;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.CommandLineRunner;
@@ -19,6 +23,7 @@ import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.context.annotation.Bean;
 
 import java.io.File;
+import java.io.IOException;
 import java.nio.file.Path;
 import java.util.List;
 
@@ -38,6 +43,7 @@ public class DedeApplication {
                                              VulnerabilityService security, GraphAgentSkills agent,
                                              OsgiLinker osgiLinker, DeltaAnalyzer deltaAnalyzer,
                                              CloudReadinessAnalyzer cloudAnalyzer, BpaReportGenerator bpaGenerator,
+                                             ForbiddenApiScanner forbiddenApiScanner,
                                              ConfigurableApplicationContext context) {
         return args -> {
             if (args.length == 0) {
@@ -60,6 +66,7 @@ public class DedeApplication {
             String snapshotPath = null;
             String compareSnapshot = null;
             String bpaReportPath = null;
+            String sarifOutputPath = null;
             boolean cloudReadiness = false;
             boolean watchMode = false;
 
@@ -87,6 +94,9 @@ public class DedeApplication {
                 }
                 if ("--bpa-report".equals(args[i]) && i + 1 < args.length) {
                     bpaReportPath = args[i + 1];
+                }
+                if ("--sarif".equals(args[i]) && i + 1 < args.length) {
+                    sarifOutputPath = args[i + 1];
                 }
                 if ("--cloud-readiness".equals(args[i])) {
                     cloudReadiness = true;
@@ -173,6 +183,22 @@ public class DedeApplication {
                 log.info("BPA report saved to: {}", bpaReportPath);
             }
 
+            // SARIF Report (for GitHub Code Scanning, VS Code Problems panel, SIEMs)
+            if (sarifOutputPath != null) {
+                log.info("Generating SARIF report: {}", sarifOutputPath);
+                Path scanRoot = Path.of(projectPath);
+                ForbiddenApiScanner.ScanResult scanResult = forbiddenApiScanner.scanProject(scanRoot);
+                SarifReport sarif = new SarifReport(scanResult.violations(), scanRoot);
+
+                ObjectMapper mapper = new ObjectMapper().enable(SerializationFeature.INDENT_OUTPUT);
+                try {
+                    mapper.writeValue(new File(sarifOutputPath), sarif.toSarif());
+                    log.info("SARIF report saved to: {}", sarifOutputPath);
+                } catch (IOException e) {
+                    log.error("Failed to write SARIF report to {}: {}", sarifOutputPath, e.getMessage());
+                }
+            }
+
             // AI Insights
             List<String> suggestions = agent.suggestRefactoring();
             if (suggestions.isEmpty()) {
@@ -217,6 +243,7 @@ public class DedeApplication {
         log.info("  --compare <file>    Compare with previous snapshot");
         log.info("  --cloud-readiness   Run AEM Cloud Service readiness check");
         log.info("  --bpa-report <path> Generate BPA-compatible report (.json or .html)");
+        log.info("  --sarif <path.sarif.json> Export forbidden-API findings as SARIF 2.1.0");
         log.info("  --watch             Start watching for file changes and update incrementally");
         log.info("");
         log.info("Web UI:      http://localhost:8080/");

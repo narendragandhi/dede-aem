@@ -84,6 +84,9 @@ jobs:
     runs-on: ubuntu-latest
     needs: build
 
+    env:
+      NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -96,13 +99,11 @@ jobs:
           cache: maven
 
       - name: OWASP Dependency Check (fails on CVSS >= 7)
-        if: ${{ secrets.NVD_API_KEY != '' }}
+        if: ${{ env.NVD_API_KEY != '' }}
         run: mvn org.owasp:dependency-check-maven:check -B
-        env:
-          NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
 
       - name: Skip OWASP Dependency Check (no NVD_API_KEY configured)
-        if: ${{ secrets.NVD_API_KEY == '' }}
+        if: ${{ env.NVD_API_KEY == '' }}
         run: |
           echo "::warning::NVD_API_KEY secret not set, skipping OWASP Dependency Check. Without a key the NVD API returns 403/404 and the scan cannot run at all. Get a free key at https://nvd.nist.gov/developers/request-an-api-key and add it with: gh secret set NVD_API_KEY"
 

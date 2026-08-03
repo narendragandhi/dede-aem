@@ -40,5 +40,10 @@ EXPOSE 8080
 ENV SPRING_PROFILES_ACTIVE=prod \
     JAVA_OPTS="-Xms256m -Xmx512m -XX:+UseG1GC -XX:+UseContainerSupport"
 
-# Run application
-ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -jar app.jar $@"]
+# Run application.
+# The trailing "--" is required: in `sh -c "script" arg0 arg1...`, the first
+# appended arg becomes $0 (the script's own conventional name slot), not part of
+# "$@" (which expands from $1 onward). Without this placeholder, `docker run
+# image --help` silently drops --help entirely (args.length == 0), which starts
+# the app as a REST/GraphQL/Web UI server instead of running one-shot and exiting.
+ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -jar app.jar \"$@\"", "--"]

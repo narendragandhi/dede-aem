@@ -12,7 +12,7 @@ COPY profiles ./profiles
 RUN mvn clean package -DskipTests -B
 
 # Stage 2: Runtime
-FROM eclipse-temurin:21-jre-jammy
+FROM eclipse-temurin:25-jre-jammy
 
 # Create non-root user for security
 RUN groupadd -r dede && useradd -r -g dede dede

@@ -16,7 +16,16 @@ Execute the security audit via the CLI:
 java -jar dede.jar <path-to-project> --security
 ```
 
+This alone only reaches vulnerabilities dede's own scanners create (forbidden-API usage, dispatcher misconfigurations, ...). To rank real CVEs by blast radius, feed it an OWASP Dependency-Check JSON report:
+
+```bash
+mvn org.owasp:dependency-check-maven:check -Dformat=JSON
+java -jar dede.jar <path-to-project> --security --dependency-check-report target/dependency-check-report.json
+```
+
+Dede doesn't re-implement CVE detection or talk to the NVD directly; it consumes Dependency-Check's own findings and re-ranks them by real reachability instead of flat CVSS score.
+
 ## 4. Feature Roadmap
-*   **NVD API Integration**: Live feed from the National Vulnerability Database.
+*   **NVD API Integration**: ~~Live feed from the National Vulnerability Database~~ Superseded: dede consumes an OWASP Dependency-Check JSON report instead of talking to the NVD directly (see "How to Run" above) -- avoids re-implementing what Dependency-Check already does well.
 *   **Retire.js Mapping**: Deep security analysis for AEM ClientLibs (JS/CSS).
 *   **Exploit Path Visualization**: Visual highlighting of the "Attack Vector" in the Graph UI.

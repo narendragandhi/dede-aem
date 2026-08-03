@@ -12,6 +12,7 @@ import com.dede.intelligence.CloudReadinessAnalyzer;
 import com.dede.cloud.BpaReportGenerator;
 import com.dede.cloud.ForbiddenApiScanner;
 import com.dede.cloud.SarifReport;
+import com.dede.security.DependencyCveImporter;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import org.slf4j.Logger;
@@ -44,6 +45,7 @@ public class DedeApplication {
                                              OsgiLinker osgiLinker, DeltaAnalyzer deltaAnalyzer,
                                              CloudReadinessAnalyzer cloudAnalyzer, BpaReportGenerator bpaGenerator,
                                              ForbiddenApiScanner forbiddenApiScanner,
+                                             DependencyCveImporter cveImporter,
                                              ConfigurableApplicationContext context) {
         return args -> {
             if (args.length == 0) {
@@ -67,6 +69,7 @@ public class DedeApplication {
             String compareSnapshot = null;
             String bpaReportPath = null;
             String sarifOutputPath = null;
+            String dependencyCheckReportPath = null;
             boolean cloudReadiness = false;
             boolean watchMode = false;
 
@@ -98,6 +101,9 @@ public class DedeApplication {
                 if ("--sarif".equals(args[i]) && i + 1 < args.length) {
                     sarifOutputPath = args[i + 1];
                 }
+                if ("--dependency-check-report".equals(args[i]) && i + 1 < args.length) {
+                    dependencyCheckReportPath = args[i + 1];
+                }
                 if ("--cloud-readiness".equals(args[i])) {
                     cloudReadiness = true;
                 }
@@ -116,6 +122,11 @@ public class DedeApplication {
             // Link phase: connect bundles via imports/exports, link configs to services
             log.info("Running OSGi linker to connect bundles and configurations...");
             osgiLinker.link();
+
+            if (dependencyCheckReportPath != null) {
+                log.info("Importing CVE findings from dependency-check report: {}", dependencyCheckReportPath);
+                cveImporter.importReport(Path.of(dependencyCheckReportPath));
+            }
 
             if (analyzeNodeId != null) {
                 log.info("Performing impact analysis for node: {}", analyzeNodeId);
@@ -237,6 +248,7 @@ public class DedeApplication {
         log.info("  --profiles <p1,p2>  Comma-separated profiles (default: aem)");
         log.info("  --rules <path>      Path to dede-rules.json");
         log.info("  --security          Enable security reachability audit");
+        log.info("  --dependency-check-report <path.json>  Import OWASP Dependency-Check JSON to rank real CVEs by blast radius (requires --security)");
         log.info("  --dot <path.dot>    Export visual graph to DOT format");
         log.info("  --analyze <nodeId>  Perform impact analysis for a node");
         log.info("  --snapshot <dir>    Save graph snapshot to directory");

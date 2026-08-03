@@ -122,6 +122,27 @@ Dede validates OSGi `@Reference` cardinalities statically:
 | 1..1 with clear highest-ranked provider | Resolved silently |
 | `@Reference(target="(vendor=Acme)")` LDAP filter | Filter evaluated against provider properties |
 
+### CVE Blast-Radius Prioritization
+
+Tools like OWASP Dependency-Check tell you a JAR has a CVE. Dede tells you whether that CVE is actually reachable from the outside world, and ranks findings by how exposed they are, not just their CVSS score.
+
+```bash
+# 1. Run OWASP Dependency-Check to produce a JSON report (needs an NVD API key)
+mvn org.owasp:dependency-check-maven:check -Dformat=JSON
+
+# 2. Feed it to Dede for reachability-based prioritization
+java -jar dede.jar /project --security --dependency-check-report target/dependency-check-report.json
+```
+
+Each CVE becomes a node in the dependency graph, linked to the JAR/OSGi bundle it was found in. Dede then runs its existing reachability engine (the same one used for `--security`'s rule-violation findings) to compute **blast radius**: the number of distinct public endpoints (Sling servlets, resource types) each CVE is actually reachable from.
+
+```
+[blast radius 12] CVE-2015-6420 (HIGH, CVSS 7.5) in commons-collections-3.2.1.jar -- exposed via: servlet:AssetServlet, res:core/wcm/components/...
+[blast radius 1]  CVE-2023-1234 (CRITICAL, CVSS 9.1) in internal-batch-tool-1.0.jar -- exposed via: res:internal/admin/batch
+```
+
+A CVE reachable from 12 public-facing components is a materially different priority than one only reachable from an internal admin tool, even if the second one has a higher CVSS score.
+
 ---
 
 ## Output Formats

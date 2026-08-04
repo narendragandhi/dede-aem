@@ -27,6 +27,17 @@ mvn test
 docker build -t dede-java .
 ```
 
+### Building the Maven Plugin and AEM Bundle
+
+`dede-maven-plugin` and `dede-aem-bundle` are independent projects, not reactor
+submodules -- each has its own `pom.xml` and depends on `dede-java` as a normal
+Maven dependency, so the root module must be installed to the local repo first:
+
+```bash
+mvn clean install -DskipTests   # from repo root, installs com.dede:dede-java locally
+cd dede-maven-plugin && mvn clean install
+```
+
 ## Development Workflow
 
 ### Branch Naming

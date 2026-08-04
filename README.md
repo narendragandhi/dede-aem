@@ -344,22 +344,39 @@ See [`examples/github-workflow.yml`](examples/github-workflow.yml) for a copy-pa
     fi
 ```
 
-### Maven Plugin (Coming Soon)
+### Maven Plugin
+
+Runs Dede as a real build step -- `mvn verify` fails on CRITICAL cloud-readiness issues instead of needing the shell-scripted `grep` pattern above.
 
 ```xml
 <plugin>
   <groupId>com.dede</groupId>
   <artifactId>dede-maven-plugin</artifactId>
+  <version>0.0.1-SNAPSHOT</version>
   <executions>
     <execution>
       <goals><goal>check</goal></goals>
-      <configuration>
-        <failOnCritical>true</failOnCritical>
-      </configuration>
+      <!-- defaults to the verify phase -->
     </execution>
   </executions>
 </plugin>
 ```
+
+All parameters are optional:
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `projectPath` | `${project.basedir}` | Directory to scan |
+| `profiles` | `aem` | Comma-separated analysis profiles |
+| `rulesFile` | *(none)* | Path to a `dede-rules.json` governance ruleset |
+| `security` | `true` | Run the security reachability audit |
+| `dependencyCheckReport` | *(none)* | Path to an OWASP Dependency-Check JSON report, for CVE blast-radius ranking |
+| `sarifOutputFile` | `${project.build.directory}/dede-report.sarif.json` | Where to write SARIF findings |
+| `bpaReportFile` | `${project.build.directory}/dede-bpa-report.json` | Where to write the BPA-compatible report |
+| `failOnCritical` | `true` | Fail the build on any CRITICAL cloud-readiness issue |
+| `skip` | `false` | Skip entirely (`-Ddede.skip=true`) |
+
+Requires `dede-java` to be `mvn install`-ed locally first (this isn't a multi-module reactor -- see `CONTRIBUTING.md`). Not published to Maven Central yet.
 
 ---
 

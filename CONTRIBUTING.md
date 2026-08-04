@@ -202,9 +202,11 @@ src/main/java/com/dede/
 ├── discovery/        # Parsers and scanners
 ├── domain/           # Core domain model
 │   └── model/        # Node, Relationship types
-├── cloud/            # Cloud readiness analysis
-├── security/         # Security scanning
-└── web/              # REST API and Web UI
+├── cloud/            # Cloud readiness analysis (forbidden APIs, BPA reports)
+├── security/         # Security scanning (XSS, ACLs, XXE hardening, CVE import)
+├── intelligence/      # Reachability analysis, cloud-readiness scoring, AI suggestions
+├── osgi/              # OSGi service/reference resolution
+└── api/               # REST API controllers (Web UI/GraphQL are separate autoconfigured modules)
 ```
 
 ## License

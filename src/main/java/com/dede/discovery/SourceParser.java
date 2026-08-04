@@ -79,6 +79,18 @@ public class SourceParser implements ProjectParser {
 
     /**
      * Load multiple profiles and merge their mappings.
+     *
+     * Checks the filesystem first (profiles/&lt;name&gt;.json relative to the
+     * current working directory, or name as a direct path) so genuine custom
+     * profiles still work, then falls back to /profiles/&lt;name&gt;.json on the
+     * classpath -- the same fallback loadDefaultProfile() already has. Without
+     * this, every real invocation of the packaged jar/Docker image/Maven plugin
+     * (i.e. run from anywhere other than dede-java's own source checkout, which
+     * is effectively all real usage) silently loaded zero mappings here: this
+     * method always runs on every scan and always clears activeMappings first,
+     * so a failed lookup left the core @Model/@Component/@Reference/
+     * @SlingServletResourceTypes relationship-building mappings empty with only
+     * a WARN-level log to notice by.
      */
     public void loadProfiles(String[] profileNames) {
         activeMappings.clear();
@@ -93,8 +105,17 @@ public class SourceParser implements ProjectParser {
                     AnnotationMapping mapping = objectMapper.readValue(profileFile, AnnotationMapping.class);
                     activeMappings.addAll(mapping.getMappings());
                     log.info("Loaded profile: {} ({} mappings)", name, mapping.getMappings().size());
-                } else {
-                    log.warn("Profile not found: {}", name);
+                    continue;
+                }
+
+                try (InputStream is = getClass().getResourceAsStream("/profiles/" + name + ".json")) {
+                    if (is != null) {
+                        AnnotationMapping mapping = objectMapper.readValue(is, AnnotationMapping.class);
+                        activeMappings.addAll(mapping.getMappings());
+                        log.info("Loaded profile from classpath: {} ({} mappings)", name, mapping.getMappings().size());
+                    } else {
+                        log.warn("Profile not found: {}", name);
+                    }
                 }
             } catch (IOException e) {
                 log.error("Failed to load profile {}: {}", name, e.getMessage(), e);

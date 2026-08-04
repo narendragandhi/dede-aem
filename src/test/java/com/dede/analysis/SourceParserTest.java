@@ -57,4 +57,48 @@ class SourceParserTest {
         CodeNode methodNode = graphService.findNodeById("method:com.example.TestClass.myMethod()").orElseThrow();
         assertThat(methodNode.getType()).isEqualTo(NodeType.METHOD);
     }
+
+    /**
+     * loadProfiles() always runs on every real scan (CLI, Docker, Maven plugin) and
+     * always clears activeMappings first, then looked up profiles via a filesystem
+     * path only -- no classpath fallback, unlike loadDefaultProfile(). Since real
+     * consumers never run from dede-java's own source checkout (the only place
+     * "profiles/aem.json" exists as a real file), every real invocation silently
+     * loaded zero mappings here, breaking the @Model/@Component/@Reference/
+     * @SlingServletResourceTypes relationship-building this method drives -- with
+     * only a WARN log to notice by. This profile only exists as a classpath
+     * resource (src/test/resources/profiles/classpath-only-test-profile.json), not
+     * on the filesystem anywhere, so the filesystem lookup is guaranteed to miss and
+     * this exercises the classpath fallback specifically.
+     */
+    @Test
+    void loadProfilesFallsBackToClasspathWhenNotOnFilesystem(@TempDir Path tempDir) throws IOException {
+        GraphService graphService = createService();
+        SourceParser parser = new SourceParser(graphService);
+
+        parser.loadProfiles(new String[]{"classpath-only-test-profile"});
+
+        Path sourceFile = tempDir.resolve("Foo.java");
+        Files.writeString(sourceFile, """
+                package com.example;
+
+                public @interface TestAnnotation { String value(); }
+                """);
+        Path annotatedFile = tempDir.resolve("Annotated.java");
+        Files.writeString(annotatedFile, """
+                package com.example;
+
+                @TestAnnotation(value = "myResourceType")
+                public class Annotated {
+                }
+                """);
+
+        parser.parse(annotatedFile);
+
+        CodeNode resourceTypeNode = graphService.findNodeById("test:myResourceType")
+            .orElseThrow(() -> new AssertionError(
+                "Expected node created by the classpath-loaded profile mapping was missing -- "
+                    + "loadProfiles() likely fell back to filesystem-only lookup again"));
+        assertThat(resourceTypeNode.getType()).isEqualTo(NodeType.JCR_RESOURCE_TYPE);
+    }
 }

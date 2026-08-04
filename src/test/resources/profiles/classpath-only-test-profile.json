@@ -1,0 +1,11 @@
+{
+  "mappings": [
+    {
+      "annotationName": "TestAnnotation",
+      "attributeName": "value",
+      "idPrefix": "test:",
+      "nodeType": "JCR_RESOURCE_TYPE",
+      "relationship": "REFERENCES"
+    }
+  ]
+}

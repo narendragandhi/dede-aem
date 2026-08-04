@@ -100,11 +100,12 @@ public class SarifReport {
             help.put("markdown", String.format("[%s — %s](%s)", v.cweId(), v.cweName(), v.cweUrl()));
             rule.put("help", help);
 
+            // "guid" is an optional SARIF field; Map.of() forbids null values (throws
+            // NPE immediately), so it's omitted here rather than represented as null.
             rule.put("relationships", List.of(Map.of(
                 "target", Map.of(
                     "id", v.cweId(),
-                    "toolComponent", Map.of("name", "CWE"),
-                    "guid", null
+                    "toolComponent", Map.of("name", "CWE")
                 ),
                 "kinds", List.of("superset")
             )));

@@ -235,8 +235,19 @@ Run as web server for programmatic access:
 mvn spring-boot:run
 ```
 
+Starting with no arguments boots the server with an **empty graph** -- nothing scans automatically. Populate it either by launching with `--watch <path>` on the command line (scans once, then keeps the server alive), or via `POST /api/graph/scan` below.
+
+**No authentication exists on this API.** `POST /api/graph/scan` is fail-closed by default -- it rejects every request until you set `DEDE_SCAN_ALLOWED_ROOT`, since without a restriction any caller who can reach the endpoint could direct the server to walk an arbitrary filesystem path:
+
+```bash
+DEDE_SCAN_ALLOWED_ROOT=/path/to/your/projects mvn spring-boot:run
+```
+
+Only paths equal to or nested under that directory (after normalization -- `..` traversal attempts are rejected) are accepted. Everything else on this API is still unauthenticated; don't expose it beyond localhost.
+
 | Endpoint | Description |
 |----------|-------------|
+| `POST /api/graph/scan` | Scan a project and populate the graph. Body: `{"projectPath": "...", "profiles": "aem"}`. Requires `DEDE_SCAN_ALLOWED_ROOT`. |
 | `GET /api/graph` | Full dependency graph |
 | `GET /api/graph/stats` | Node and edge counts |
 | `GET /api/graph/nodes/{id}` | Single node details |
@@ -250,6 +261,11 @@ GraphQL Explorer: `http://localhost:8080/graphiql`
 #### Example Requests
 
 ```bash
+# Populate the graph (required first -- see DEDE_SCAN_ALLOWED_ROOT above)
+curl -X POST http://localhost:8080/api/graph/scan \
+  -H "Content-Type: application/json" \
+  -d '{"projectPath": "/path/to/your/projects/my-aem-project"}'
+
 # Get full graph
 curl http://localhost:8080/api/graph
 

@@ -86,6 +86,11 @@ dede:
   scan:
     timeout-seconds: ${DEDE_SCAN_TIMEOUT:300}
     max-file-size-mb: ${DEDE_MAX_FILE_SIZE:10}
+    # Fail-closed by default: POST /api/graph/scan rejects every request unless
+    # this is set. Without it, any unauthenticated caller could direct the server
+    # to walk an arbitrary filesystem path. When set, only paths equal to or
+    # nested under this directory (after normalization) are accepted.
+    allowed-root: ${DEDE_SCAN_ALLOWED_ROOT:}
   ai:
     enabled: ${DEDE_AI_ENABLED:true}
 

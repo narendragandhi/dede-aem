@@ -6,6 +6,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import java.time.Instant;
 import java.util.LinkedHashMap;
@@ -69,6 +70,26 @@ public class GlobalExceptionHandler {
         }
 
         return ResponseEntity.status(status).body(response);
+    }
+
+    /**
+     * NoResourceFoundException is Spring's own signal for "no route/static
+     * resource matched this URL" -- a genuine 404, not a server bug. Without
+     * this handler, the generic Exception.class handler below catches it too
+     * (RestControllerAdvice applies globally) and every unmapped URL returns
+     * 500 "Internal Server Error" instead of 404. Confirmed by hitting a
+     * nonexistent endpoint directly.
+     */
+    @ExceptionHandler(NoResourceFoundException.class)
+    public ResponseEntity<Map<String, Object>> handleNoResourceFound(NoResourceFoundException ex) {
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("timestamp", Instant.now().toString());
+        response.put("status", HttpStatus.NOT_FOUND.value());
+        response.put("error", HttpStatus.NOT_FOUND.getReasonPhrase());
+        response.put("errorCode", ErrorCode.FILE_NOT_FOUND.getCode());
+        response.put("message", "No endpoint found for this URL");
+
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(response);
     }
 
     @ExceptionHandler(Exception.class)

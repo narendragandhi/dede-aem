@@ -464,7 +464,7 @@ graph TD
 ## Development
 
 ```bash
-# Run tests (228 tests)
+# Run tests
 mvn test
 
 # Run with coverage
@@ -476,6 +476,8 @@ mvn clean package -DskipTests
 # Build AEM bundle
 cd dede-aem-bundle && mvn clean package
 ```
+
+See [docs/PERFORMANCE.md](docs/PERFORMANCE.md) for measured scan performance at scale (up to 1,433 files) and a known algorithmic scaling issue in the `--security` reachability audit at high CVE/endpoint counts, including a reproducible benchmark harness.
 
 ---
 

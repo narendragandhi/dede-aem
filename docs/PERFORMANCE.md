@@ -33,19 +33,21 @@ This does not extrapolate indefinitely -- these are three data points spanning r
 
 Running `--security` against the same three tiers added negligible time, because none of them produced any `VULNERABILITY` graph nodes to check reachability for -- the loop in `VulnerabilityService.audit()` had nothing to iterate over. That's not a meaningful performance signal; it's an empty test.
 
-To actually exercise the code path, a standalone harness (`BenchHarness.java`, not checked into the repo -- see below) constructs a graph directly against `VulnerabilityService`: N vulnerability nodes, each connected via a 5-hop `WIRES_TO` bundle chain to M endpoint nodes, and times `audit()` in isolation from scanning/JVM startup.
+To actually exercise the code path, `VulnerabilityServiceBenchmark` (checked into `src/test/java/com/dede/intelligence/`, disabled by default -- run with `-Dtest=VulnerabilityServiceBenchmark`) constructs a graph directly against `VulnerabilityService`: N vulnerability nodes, each connected via a 5-hop `WIRES_TO` bundle chain to M endpoint nodes, and times `audit()` in isolation from scanning/JVM startup.
 
-| Vulnerabilities × Endpoints | Dijkstra calls | Wall time | Time / call |
-|---|---|---|---|
-| 20 × 500 | 10,000 | 0.93s | 93 μs |
-| 50 × 1,000 | 50,000 | 8.43s | 169 μs |
-| 100 × 2,000 | 200,000 | 68.92s | 345 μs |
+**First run found a genuine super-linear scaling bug**, since fixed:
 
-**This is super-linear, not linear.** Going from 10,000 to 200,000 checks is 20x more work; it took 74x longer. The cost *per check* grew from 93 μs to 345 μs as scale increased -- if each check were independent and O(1) amortized, per-call cost would stay flat. It doesn't.
+| Vulnerabilities × Endpoints | Dijkstra calls | Before | After | Speedup |
+|---|---|---|---|---|
+| 20 × 500 | 10,000 | 0.93s (93 μs/call) | 0.12s (12.3 μs/call) | 7.5x |
+| 50 × 1,000 | 50,000 | 8.43s (169 μs/call) | 0.51s (10.2 μs/call) | 16.6x |
+| 100 × 2,000 | 200,000 | 68.92s (345 μs/call) | 2.92s (14.6 μs/call) | 23.6x |
 
-**Root cause (inferred, not yet fixed):** `VulnerabilityService.audit()` calls `dijkstra.getPath(vuln, endpoint)` once per (vulnerability, endpoint) pair, inside a nested loop. If a fresh shortest-path tree from `vuln` isn't cached and reused across all its endpoint checks, every one of those calls repeats work that only needs to happen once per vulnerability. The fix (not implemented here) would be computing one shortest-path tree per vulnerability source and querying endpoint distances against it, changing the shape from O(vulnerabilities × endpoints × Dijkstra) toward O(vulnerabilities × Dijkstra).
+**Root cause:** `audit()` called `dijkstra.getPath(vuln, endpoint)` once per (vulnerability, endpoint) pair -- a full Dijkstra run from scratch every single call. Going from 10,000 to 200,000 checks was 20x more work but took 74x longer, and per-call cost grew with scale (93 → 345 μs), which shouldn't happen if each check were O(1) amortized.
 
-**Practical read:** at counts plausible for a real audit (tens of CVEs, hundreds of endpoints) this is fine -- under a second. At the pessimistic end (100 CVEs, 2,000 endpoints, which is not an unreasonable count for a large enterprise AEM instance with many resource types and servlets), it's over a minute for the security audit alone. That's a real, reproducible finding, not a hypothetical one -- and it's exactly the kind of thing this whole session has been about surfacing rather than assuming away.
+**Fix:** `dijkstra.getPaths(vuln)` computes the shortest-path tree from a source once and returns a `SingleSourcePaths` object; querying it per endpoint (`.getPath(endpoint)`) is a cheap tree lookup instead of a fresh algorithm run. Changed the shape from O(vulnerabilities × endpoints × Dijkstra) to O(vulnerabilities × Dijkstra + vulnerabilities × endpoints × path-length). Post-fix, per-call cost is roughly flat (10-15 μs regardless of scale) -- the actual signature of a fixed algorithmic shape, not just a constant-factor speedup. All pre-existing correctness tests (`VulnerabilityServiceTest`) pass unchanged: same findings, same blast-radius ranking, before and after.
+
+**Practical read:** the pessimistic scenario (100 CVEs, 2,000 endpoints) went from over a minute to under 3 seconds. This was a real, reproducible bug, found and fixed in the same session by actually measuring instead of assuming.
 
 ## What This Does *Not* Cover
 

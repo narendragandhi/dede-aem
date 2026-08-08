@@ -237,13 +237,35 @@ mvn spring-boot:run
 
 Starting with no arguments boots the server with an **empty graph** -- nothing scans automatically. Populate it either by launching with `--watch <path>` on the command line (scans once, then keeps the server alive), or via `POST /api/graph/scan` below.
 
-**No authentication exists on this API.** `POST /api/graph/scan` is fail-closed by default -- it rejects every request until you set `DEDE_SCAN_ALLOWED_ROOT`, since without a restriction any caller who can reach the endpoint could direct the server to walk an arbitrary filesystem path:
+### Authentication
+
+Every endpoint except `/actuator/health` (needed by the Docker healthcheck, which has no way to supply a key) requires an API key on every request, via the `X-Dede-Api-Key` header or `Authorization: Bearer <key>`. This applies to REST, GraphQL, GraphiQL, and Swagger UI alike.
+
+If `DEDE_API_KEY` isn't set, the server generates a random key at startup and logs it once (the same pattern Jenkins and Home Assistant use for first-run setup) -- the API can never be silently wide open, but you're never hard-blocked from local use either:
+
+```
+No DEDE_API_KEY configured. Generated a one-time key for this run:
+  Btbsek5yWcE-UKzO88svCrys7yeO6TAiZ5TAP8OGI9I
+Set DEDE_API_KEY to use a fixed key across restarts.
+```
+
+Set a fixed key for anything beyond a one-off local session:
+
+```bash
+DEDE_API_KEY=your-secret-key mvn spring-boot:run
+```
+
+```bash
+curl -H "X-Dede-Api-Key: your-secret-key" http://localhost:8080/api/graph/stats
+```
+
+`POST /api/graph/scan` additionally is fail-closed on *path*, independent of the key: it rejects every request until you set `DEDE_SCAN_ALLOWED_ROOT`, since without a restriction any caller holding a valid key could direct the server to walk an arbitrary filesystem path:
 
 ```bash
 DEDE_SCAN_ALLOWED_ROOT=/path/to/your/projects mvn spring-boot:run
 ```
 
-Only paths equal to or nested under that directory (after normalization -- `..` traversal attempts are rejected) are accepted. Everything else on this API is still unauthenticated; don't expose it beyond localhost.
+Only paths equal to or nested under that directory (after normalization -- `..` traversal attempts are rejected) are accepted.
 
 | Endpoint | Description |
 |----------|-------------|
@@ -258,28 +280,31 @@ Only paths equal to or nested under that directory (after normalization -- `..` 
 Swagger UI: `http://localhost:8080/swagger-ui.html`  
 GraphQL Explorer: `http://localhost:8080/graphiql`
 
+(Both require the API key too -- enter it via Swagger UI's "Authorize" button or GraphiQL's request headers panel.)
+
 #### Example Requests
 
 ```bash
 # Populate the graph (required first -- see DEDE_SCAN_ALLOWED_ROOT above)
 curl -X POST http://localhost:8080/api/graph/scan \
+  -H "X-Dede-Api-Key: your-secret-key" \
   -H "Content-Type: application/json" \
   -d '{"projectPath": "/path/to/your/projects/my-aem-project"}'
 
 # Get full graph
-curl http://localhost:8080/api/graph
+curl -H "X-Dede-Api-Key: your-secret-key" http://localhost:8080/api/graph
 
 # Get stats
-curl http://localhost:8080/api/graph/stats
+curl -H "X-Dede-Api-Key: your-secret-key" http://localhost:8080/api/graph/stats
 
 # Find a node
-curl http://localhost:8080/api/graph/nodes/bundle:core
+curl -H "X-Dede-Api-Key: your-secret-key" http://localhost:8080/api/graph/nodes/bundle:core
 
 # Detect circular dependencies
-curl http://localhost:8080/api/graph/cycles
+curl -H "X-Dede-Api-Key: your-secret-key" http://localhost:8080/api/graph/cycles
 
 # Incoming dependencies for a node (blast radius)
-curl http://localhost:8080/api/graph/nodes/bundle:core/incoming
+curl -H "X-Dede-Api-Key: your-secret-key" http://localhost:8080/api/graph/nodes/bundle:core/incoming
 ```
 
 ---

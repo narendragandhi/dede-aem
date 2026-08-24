@@ -427,7 +427,57 @@ All parameters are optional:
 | `sarifOutputFile` | `${project.build.directory}/dede-report.sarif.json` | Where to write SARIF findings |
 | `bpaReportFile` | `${project.build.directory}/dede-bpa-report.json` | Where to write the BPA-compatible report |
 | `failOnCritical` | `true` | Fail the build on any CRITICAL cloud-readiness issue |
+| `baselineFile` | *(none)* | Enables **ratchet mode** (see below): fail only on forbidden-API violations not already in this baseline |
+| `updateBaseline` | `false` | With `baselineFile`: rewrite it from current findings instead of gating (`-Ddede.updateBaseline=true`) |
+| `multiModuleRoot` | `${maven.multiModuleProjectDirectory}` | Root used to relativize baseline keys -- in a reactor this makes each module's findings distinct against one shared baseline |
 | `skip` | `false` | Skip entirely (`-Ddede.skip=true`) |
+
+Both gates always evaluate: a single build failure lists CRITICAL cloud-readiness issues *and* new ratchet violations together, so neither report hides the other.
+
+#### Ratchet mode (Sentinel-Twin gate)
+
+`failOnCritical` fails on *any* CRITICAL finding -- which is useless on a codebase
+that already carries legacy debt: every build fails, so nobody reads the report.
+Ratchet mode inverts this: **existing debt stays green, new debt fails the build.**
+
+```xml
+<profile>
+  <id>sentinel-twin</id>
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>com.dede</groupId>
+        <artifactId>dede-maven-plugin</artifactId>
+        <version>0.0.1-SNAPSHOT</version>
+        <executions>
+          <execution>
+            <goals><goal>check</goal></goals>
+            <configuration>
+              <baselineFile>${maven.multiModuleProjectDirectory}/dede-baseline.json</baselineFile>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
+</profile>
+```
+
+Adoption is deliberately two-step:
+
+1. **One-time baseline:** run `mvn verify -Ddede.updateBaseline=true`, then commit the
+   generated `dede-baseline.json`. The file records each finding as a stable key
+   (`TYPE|target|filePath`) -- no line numbers, so refactors never masquerade as regressions;
+   paths are relativized to the scanned project root, so a baseline committed from a
+   developer machine matches CI checkout paths.
+2. **Every build after:** any NEW forbidden import or call (e.g. a fresh
+   `com.day.cq.replication.Replicator` usage) fails with the offending keys and fix hints.
+   Debt only goes down: fixing baselined findings shrinks the file on your next deliberate
+   `-Ddede.updateBaseline=true`.
+
+Multi-module reactors work with one baseline at the repo root: keys relativize against
+`maven.multiModuleProjectDirectory`, so `app-core/src/...` and `app-web/src/...` are
+distinct findings -- fixing a violation in one module cannot mask another module's copy.
 
 Requires `dede-java` to be `mvn install`-ed locally first (this isn't a multi-module reactor -- see `CONTRIBUTING.md`). Not published to Maven Central yet.
 

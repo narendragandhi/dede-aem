@@ -69,6 +69,7 @@ public class DedeApplication {
             String compareSnapshot = null;
             String bpaReportPath = null;
             String sarifOutputPath = null;
+            String suggestionsOutputPath = null;
             String dependencyCheckReportPath = null;
             boolean cloudReadiness = false;
             boolean watchMode = false;
@@ -100,6 +101,9 @@ public class DedeApplication {
                 }
                 if ("--sarif".equals(args[i]) && i + 1 < args.length) {
                     sarifOutputPath = args[i + 1];
+                }
+                if ("--suggestions".equals(args[i]) && i + 1 < args.length) {
+                    suggestionsOutputPath = args[i + 1];
                 }
                 if ("--dependency-check-report".equals(args[i]) && i + 1 < args.length) {
                     dependencyCheckReportPath = args[i + 1];
@@ -219,6 +223,16 @@ public class DedeApplication {
                 suggestions.forEach(s -> log.info("  - {}", s));
             }
 
+            if (suggestionsOutputPath != null) {
+                log.info("Writing refactoring suggestions: {}", suggestionsOutputPath);
+                ObjectMapper mapper = new ObjectMapper().enable(SerializationFeature.INDENT_OUTPUT);
+                try {
+                    mapper.writeValue(new File(suggestionsOutputPath), suggestions);
+                } catch (IOException e) {
+                    log.error("Failed to write refactoring suggestions to {}: {}", suggestionsOutputPath, e.getMessage());
+                }
+            }
+
             if (watchMode) {
                 scanner.startWatching(projectPath);
             } else {
@@ -256,6 +270,7 @@ public class DedeApplication {
         log.info("  --cloud-readiness   Run AEM Cloud Service readiness check");
         log.info("  --bpa-report <path> Generate BPA-compatible report (.json or .html)");
         log.info("  --sarif <path.sarif.json> Export forbidden-API findings as SARIF 2.1.0");
+        log.info("  --suggestions <path.json> Export refactoring suggestions as JSON");
         log.info("  --watch             Start watching for file changes and update incrementally");
         log.info("");
         log.info("Web UI:      http://localhost:8080/");

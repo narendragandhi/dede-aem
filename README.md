@@ -1,5 +1,17 @@
 # Dede - AEM Cloud Service Readiness Analyzer
 
+Dede is the deterministic analysis layer of the
+[AEM Intelligence Workspace](../aem-openwiki/docs/product-framing.md). It owns
+static findings, readiness scoring, and dependency-graph construction;
+[AEM OpenWiki](../aem-openwiki/README.md) explains those artifacts and the
+[Recipe Engine](../aem-recipe-engine/README.md) can govern the next action.
+Dede remains a standalone CLI and does not require OpenWiki or the Recipe
+Engine to analyze a repository.
+
+See the [AEM Intelligence Workspace architecture and value summary](../aem-openwiki/docs/architecture-and-value.md)
+for how Dede integrates with OpenWiki and the Recipe Engine while remaining
+standalone.
+
 A static analysis tool for validating AEM codebase compatibility with AEM as a Cloud Service and visualizing component dependencies.
 
 [![Java Version](https://img.shields.io/badge/Java-21-blue)](https://openjdk.org/projects/jdk/21/)

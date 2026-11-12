@@ -60,18 +60,26 @@ src/main/java/com/dede/
 
 ## CLI Options
 
+Run `--help` for the full list (source of truth: `KNOWN_FLAGS` and `printHelp()` in
+`DedeApplication.java`). Most used:
+
 ```
 --profiles <p1,p2>  Analysis profiles (default: aem)
+--json <path>       Findings + graph stats + suggestions as JSON
+--sarif <path>      Forbidden-API findings as SARIF 2.1.0
+--fail-on-critical  Exit 1 on any CRITICAL finding (CI gate)
 --dot <path.dot>    Export dependency graph to DOT format
 --security          Enable security surface audit
 --snapshot <dir>    Save graph snapshot
 --compare <file>    Compare with previous snapshot
 ```
 
+Default scan exclusions live in `discovery/ScanExclusions.java`.
+
 ## Testing
 
 ```bash
-# Run all tests (61 tests)
+# Run all tests
 mvn test
 
 # Run specific test class

@@ -48,6 +48,10 @@ public class ProjectScanner {
 
             @Override
             public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs) throws IOException {
+                if (ScanExclusions.isExcluded(root, dir)) {
+                    log.debug("Skipping excluded directory: {}", dir);
+                    return FileVisitResult.SKIP_SUBTREE;
+                }
                 if (Files.exists(dir.resolve(".content.xml"))) {
                     detectAemComponent(dir);
                 }
@@ -67,6 +71,9 @@ public class ProjectScanner {
         Files.walkFileTree(root, new SimpleFileVisitor<>() {
             @Override
             public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs) throws IOException {
+                if (ScanExclusions.isExcluded(root, dir)) {
+                    return FileVisitResult.SKIP_SUBTREE;
+                }
                 dir.register(watchService, StandardWatchEventKinds.ENTRY_MODIFY, StandardWatchEventKinds.ENTRY_CREATE, StandardWatchEventKinds.ENTRY_DELETE);
                 return FileVisitResult.CONTINUE;
             }

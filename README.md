@@ -16,7 +16,7 @@ A static analysis tool for validating AEM codebase compatibility with AEM as a C
 
 [![Java Version](https://img.shields.io/badge/Java-21-blue)](https://openjdk.org/projects/jdk/21/)
 [![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.2.0-green)](https://spring.io/projects/spring-boot)
-[![Tests](https://img.shields.io/badge/Tests-228%20passing-brightgreen)]()
+[![Tests](https://img.shields.io/badge/Tests-281%20passing-brightgreen)]()
 [![Docker](https://img.shields.io/badge/ghcr.io-dede--java-blue)](https://github.com/features/packages)
 
 ---
@@ -89,10 +89,16 @@ Usage: dede <project-path> [options]
 Options:
   --profiles <p1,p2>       Analysis profiles (default: aem)
   --dot <path.dot>         Export dependency graph to DOT format
-  --json <path.json>       Export results to JSON
+  --json <path.json>       Export findings, graph stats and suggestions as JSON
+  --fail-on-critical       Exit with code 1 if any CRITICAL finding exists (CI gate)
   --security               Enable security surface audit
   --sarif <path.sarif.json> Export forbidden-API findings as SARIF 2.1.0
 ```
+
+Run `--help` for the full list. Unknown options are reported as a warning, not silently ignored.
+
+Skipped by default: `.git/`, `node_modules/`, the `it.tests`/`ui.tests` modules, Maven `target/`
+(only next to a `pom.xml`, so a Java package named `target` is still scanned) and `src/test/`.
 
 ---
 
@@ -100,14 +106,22 @@ Options:
 
 ### Cloud Readiness Violations (25 Categories)
 
+A selection; the full list with matched packages/classes is in
+[`forbidden-apis.json`](src/main/resources/forbidden-apis.json).
+
 | Category | Severity | Description |
 |----------|----------|-------------|
-| `REPLICATION_API` | CRITICAL | Direct replication agent access |
-| `JCR_OBSERVATION` | CRITICAL | JCR observation listeners (not Cloud-compatible) |
-| `CUSTOM_RUNMODES` | CRITICAL | Non-standard runmodes |
-| `WORKFLOW_PROCESS` | HIGH | Legacy workflow process steps |
-| `HARDCODED_PATHS` | MEDIUM | Paths like `/etc/`, `/apps/` in code |
-| `DEPRECATED_API` | MEDIUM | Deprecated AEM/Sling APIs |
+| `INTERNAL_API` | CRITICAL | Internal `*.impl` implementation APIs |
+| `ADMIN_SESSION` | CRITICAL | Administrative session methods that bypass ACLs |
+| `PROVIDER_TYPE_IMPLEMENTATION` | CRITICAL | Customer code implementing `@ProviderType` APIs |
+| `LOCAL_BINARY_STORAGE` | CRITICAL | Direct binary storage access |
+| `HTTP_CLIENT_TIMEOUT` | CRITICAL | HTTP clients/connections created without timeouts |
+| `SUPPLY_CHAIN_PROCESS_SPAWN` | CRITICAL | OS process spawning inside an OSGi bundle |
+| `DEPRECATED_REPLICATION` | HIGH | Replication agent/queue APIs (`Replicator` itself is fine) |
+| `DEPRECATED_WORKFLOW` | HIGH | Deprecated workflow APIs |
+| `SERVLET_PATH_BINDING` | HIGH | Servlets registered by path instead of resource type |
+| `UNCLOSED_RESOURCE_RESOLVER` | HIGH | Factory-opened ResourceResolver never closed |
+| `HARDCODED_PATHS` | MEDIUM | Hardcoded `/apps` and `/libs` paths in code |
 | ... | ... | 25 categories total |
 
 ### Dependency Analysis
@@ -177,21 +191,36 @@ dot -Tpng architecture.dot -o architecture.png
 ```
 
 ### JSON Report
+`--json <path>` combines forbidden-API findings and graph-based cloud-readiness issues
+(`source` tells them apart) with graph stats and refactoring suggestions:
+
 ```json
 {
+  "tool": "dede",
+  "version": "2.0.0",
+  "project": "/path/to/aem-project",
+  "summary": {
+    "total": 3,
+    "critical": 1,
+    "bySeverity": { "CRITICAL": 1, "MEDIUM": 2 },
+    "cloudReadinessScore": 95
+  },
+  "graph": { "nodes": 222, "edges": 119 },
   "violations": [
     {
-      "category": "HARDCODED_PATHS",
-      "severity": "MEDIUM",
-      "file": "src/main/java/com/example/MyServlet.java",
-      "line": 42,
-      "message": "Hardcoded path '/etc/designs' should use config"
+      "source": "forbidden-api",
+      "category": "INTERNAL_API",
+      "severity": "CRITICAL",
+      "file": "core/src/main/java/com/example/Publisher.java",
+      "line": 12,
+      "type": "FORBIDDEN_IMPORT",
+      "target": "com.day.cq.wcm.core.impl.PageImpl",
+      "message": "Internal implementation APIs that are not part of the public API",
+      "replacement": "Use public API interfaces instead of implementation classes",
+      "cwe": null
     }
   ],
-  "graph": {
-    "nodes": 5875,
-    "edges": 14
-  }
+  "suggestions": []
 }
 ```
 
@@ -219,22 +248,29 @@ Rules are defined in `src/main/resources/forbidden-apis.json`:
 
 ```json
 {
-  "version": "2.0",
-  "categories": {
-    "REPLICATION_API": {
-      "description": "Direct replication agent access",
+  "categories": [
+    {
+      "name": "INTERNAL_API",
+      "description": "Internal implementation APIs that are not part of the public API",
       "severity": "CRITICAL",
-      "patterns": ["com.day.cq.replication.Agent"],
-      "cloudManagerRule": "CST-1"
+      "packages": ["com.day.cq.*.impl", "com.adobe.granite.*.impl"],
+      "replacement": "Use public API interfaces instead of implementation classes"
     }
-  }
+  ]
 }
 ```
+
+Rules marked `"detection": "usage"` (`THREAD_UNSAFE_FIELDS`, `UNCLOSED_RESOURCE_RESOLVER`,
+`HTTP_CLIENT_TIMEOUT`, `HTTP_CLIENT_REUSE`, `DEPRECATED_DAM`) never match on an import alone: their
+`classes` list names the types a dedicated detector in `UsagePatternDetector` inspects (fields on
+singletons, resolvers never closed, clients built without timeouts, classes extending an asset
+handler). These findings honor `@SuppressWarnings` with the rule id (`"AEM Rules:AEM-3"`, `"AEM-3"`)
+or the category name, the same way Cloud Manager's SonarQube rules do.
 
 ### Adding Custom Rules
 
 1. Edit `forbidden-apis.json`
-2. Add patterns to existing category or create new one
+2. Add `packages`/`classes` to an existing category or add a new category object
 3. Rebuild
 
 ---
@@ -389,17 +425,15 @@ See [`examples/github-workflow.yml`](examples/github-workflow.yml) for a copy-pa
 
 ```yaml
 - name: AEM Cloud Readiness Check
-  run: |
-    java -jar dede.jar ./core --json report.json
-    if grep -q '"severity": "CRITICAL"' report.json; then
-      echo "Critical Cloud violations found"
-      exit 1
-    fi
+  run: java -jar dede.jar . --json dede-report.json --fail-on-critical
 ```
+
+`--fail-on-critical` exits with code 1 when any CRITICAL forbidden-API finding or
+cloud-readiness issue exists; the JSON report is still written first so it can be uploaded.
 
 ### Maven Plugin
 
-Runs Dede as a real build step -- `mvn verify` fails on CRITICAL cloud-readiness issues instead of needing the shell-scripted `grep` pattern above.
+Runs Dede as a real build step -- `mvn verify` fails on CRITICAL cloud-readiness issues, with ratchet support for codebases that already carry debt.
 
 ```xml
 <plugin>

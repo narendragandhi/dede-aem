@@ -1,5 +1,6 @@
 package com.dede.cloud;
 
+import com.dede.discovery.ScanExclusions;
 import com.dede.domain.GraphService;
 import com.dede.domain.model.CodeNode;
 import com.dede.domain.model.NodeType;
@@ -36,10 +37,12 @@ public class ForbiddenApiScanner {
 
     private final GraphService graphService;
     private final ForbiddenApiCatalog catalog;
+    private final UsagePatternDetector usageDetector;
 
     public ForbiddenApiScanner(GraphService graphService, ForbiddenApiCatalog catalog) {
         this.graphService = graphService;
         this.catalog = catalog;
+        this.usageDetector = new UsagePatternDetector(catalog);
     }
 
     /**
@@ -66,6 +69,7 @@ public class ForbiddenApiScanner {
         try (Stream<Path> paths = Files.walk(projectRoot)) {
             paths.filter(Files::isRegularFile)
                  .filter(p -> p.toString().endsWith(".java"))
+                 .filter(p -> !ScanExclusions.isExcluded(projectRoot, p))
                  .forEach(javaFile -> {
                      List<ForbiddenApiViolation> fileViolations = scanJavaFile(javaFile);
                      violations.addAll(fileViolations);
@@ -110,7 +114,11 @@ public class ForbiddenApiScanner {
             violations.addAll(scanAnnotations(cu, filePath, importMap));
 
             // Scan method calls
-            violations.addAll(scanMethodCalls(cu, filePath, importMap));
+            Map<String, String> varTypeMap = buildVariableTypeMap(cu, importMap);
+            violations.addAll(scanMethodCalls(cu, filePath, importMap, varTypeMap));
+
+            // Usage-pattern rules ("detection": "usage"): fields, unclosed resolvers, HTTP clients
+            violations.addAll(usageDetector.detect(cu, filePath, importMap, varTypeMap));
 
         } catch (IOException e) {
             log.warn("Failed to read Java file: {}", javaFile, e);
@@ -204,11 +212,9 @@ public class ForbiddenApiScanner {
      * 3. No scope (unqualified call): treated as any-class method match only
      */
     private List<ForbiddenApiViolation> scanMethodCalls(CompilationUnit cu, String filePath,
-                                                         Map<String, String> importMap) {
+                                                         Map<String, String> importMap,
+                                                         Map<String, String> varTypeMap) {
         List<ForbiddenApiViolation> violations = new ArrayList<>();
-
-        // Build a reverse map: variable name → import type (best-effort, no full symbol solver)
-        Map<String, String> varTypeMap = buildVariableTypeMap(cu, importMap);
 
         cu.findAll(MethodCallExpr.class).forEach(methodCall -> {
             String methodName = methodCall.getNameAsString();
@@ -404,6 +410,7 @@ public class ForbiddenApiScanner {
         try (Stream<Path> paths = Files.walk(projectRoot)) {
             paths.filter(Files::isRegularFile)
                  .filter(p -> p.toString().endsWith(".java"))
+                 .filter(p -> !ScanExclusions.isExcluded(projectRoot, p))
                  .forEach(javaFile -> {
                      try {
                          String source = Files.readString(javaFile);
@@ -473,7 +480,9 @@ public class ForbiddenApiScanner {
         FORBIDDEN_IMPORT,
         FORBIDDEN_METHOD_CALL,
         DEPRECATED_ANNOTATION,
-        ADMIN_SESSION
+        ADMIN_SESSION,
+        /** A usage anti-pattern found by {@link UsagePatternDetector} (not a forbidden import). */
+        UNSAFE_USAGE
     }
 
     public record ForbiddenApiViolation(

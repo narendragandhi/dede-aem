@@ -48,19 +48,14 @@ public class GraphAgentSkills {
                 }
             });
 
-        // 3. Detect Legacy AEM APIs (Cloud Readiness)
-        List<CodeNode> legacyNodes = graphService.getAllNodes().stream()
-            .filter(n -> n.getId().contains("com.day.cq"))
-            .limit(5)
-            .toList();
-        if (!legacyNodes.isEmpty()) {
-            suggestions.add("REFACTOR [AEM Cloud]: Legacy 'com.day.cq' APIs found in " + legacyNodes.size() + 
-                " locations. Suggestion: Modernize to 'com.adobe.granite' or 'org.apache.sling' equivalents.");
-        }
+        // No blanket "com.day.cq is legacy" suggestion: most com.day.cq APIs (PageManager,
+        // wcm.api, commons, ...) are fully supported on AEM as a Cloud Service. The APIs that
+        // really are forbidden are covered precisely by ForbiddenApiScanner's catalog.
 
-        // 4. Detect Dangling Services (Provided but not Consumed)
+        // 3. Detect Dangling Services (Provided but not Consumed)
         List<CodeNode> dangling = graphService.getAllNodes().stream()
             .filter(n -> n.getType() == NodeType.OSGI_SERVICE)
+            .filter(svc -> !isWhiteboardService(svc))
             .filter(svc -> !"true".equals(svc.getProperties().get("isExported")))
             .filter(svc -> graphService.getInboundRelatedNodes(svc, RelationshipType.PROVIDES).stream().noneMatch(c -> c.getType() == NodeType.OSGI_COMPONENT))
             .filter(svc -> graphService.getInboundRelatedNodes(svc, RelationshipType.CONSUMES).isEmpty())
@@ -70,16 +65,7 @@ public class GraphAgentSkills {
             suggestions.add("REFACTOR [Dead Code]: Found OSGi services with zero consumers (e.g., " + dangling.get(0).getName() + ").");
         }
 
-        // 5. Detect Legacy AEM APIs
-        long legacyCount = graphService.getAllNodes().stream()
-            .filter(n -> n.getFilePath() != null && n.getFilePath().endsWith(".java"))
-            .filter(n -> n.getProperties().getOrDefault("imports", "").contains("com.day.cq"))
-            .count();
-        if (legacyCount > 0) {
-            suggestions.add("REFACTOR [AEM Cloud]: Legacy 'com.day.cq' APIs found in " + legacyCount + " locations. Suggestion: Modernize to 'com.adobe.granite' or 'org.apache.sling' equivalents.");
-        }
-
-        // 6. Detect Zombie Resource Types (Code exists but not in Content)
+        // 4. Detect Zombie Resource Types (Code exists but not in Content)
         // Build a set of resource type names that are used as sling:resourceSuperType
         // by any other node in the graph — these are abstract supertypes, not zombies.
         Set<String> usedAsSuperType = graphService.getAllNodes().stream()
@@ -166,20 +152,6 @@ public class GraphAgentSkills {
                         .collect(Collectors.joining("\n- "));
     }
 
-    public String checkCloudReadiness() {
-        List<String> legacyPackages = List.of("com.day.cq", "com.adobe.granite.workflow.api");
-        List<CodeNode> violations = graphService.getAllNodes().stream()
-                .filter(n -> n.getType() == com.dede.domain.model.NodeType.PACKAGE)
-                .filter(pkg -> legacyPackages.stream().anyMatch(lp -> pkg.getId().contains(lp)))
-                .toList();
-
-        if (violations.isEmpty()) return "No major legacy AEM APIs detected. Codebase appears Cloud Ready.";
-
-        return "AEM Cloud Service Readiness Warning: Usage of legacy APIs detected in:\n- " +
-                violations.stream().map(CodeNode::getId).collect(Collectors.joining("\n- ")) +
-                "\nRecommendation: Migrate to modern com.adobe.granite or com.adobe.cq packages.";
-    }
-
     public String analyzeImpact(String nodeId) {
         return graphService.findNodeById(nodeId).map(node -> {
             Set<CodeNode> direct = graphService.getIncomingNodes(node);
@@ -213,6 +185,7 @@ public class GraphAgentSkills {
     public String findDanglingServices() {
         List<CodeNode> dangling = graphService.getAllNodes().stream()
                 .filter(n -> n.getType() == com.dede.domain.model.NodeType.OSGI_SERVICE)
+                .filter(svc -> !isWhiteboardService(svc))
                 .filter(svc -> !graphService.getInboundRelatedNodes(svc, RelationshipType.PROVIDES).isEmpty())
                 .filter(svc -> graphService.getInboundRelatedNodes(svc, RelationshipType.CONSUMES).isEmpty())
                 .toList();
@@ -231,6 +204,31 @@ public class GraphAgentSkills {
             return "Resource Type " + resourceType + " adapts to:\n- " + 
                     models.stream().map(CodeNode::getId).collect(Collectors.joining("\n- "));
         }).orElse("Resource Type not found: " + resourceType);
+    }
+
+    /**
+     * Whiteboard services are consumed by the framework (Sling engine, scheduler, event
+     * admin, job manager, ...) rather than through a @Reference in project code, so having
+     * no in-project consumer is normal, not dead code. Matched by simple name because
+     * {@code service = Servlet.class} yields a node named "Servlet".
+     */
+    private static final Set<String> WHITEBOARD_SERVICES = Set.of(
+        "Servlet", "Filter", "Runnable", "Job", "JobConsumer", "JobExecutor",
+        "EventHandler", "EventListener", "ResourceChangeListener", "ExternalResourceChangeListener",
+        "WorkflowProcess", "ParticipantStepChooser", "AdapterFactory", "Injector",
+        "InjectAnnotationProcessorFactory", "InjectAnnotationProcessorFactory2", "ImplementationPicker",
+        "ViaProvider", "ResourceProvider", "ResourceDecorator", "ResourceTransformer",
+        "AuthenticationHandler", "AuthenticationInfoPostProcessor", "HealthCheck",
+        "ContentDistributionListener", "ReplicationContentFilterFactory", "PostProcessor",
+        "SlingPostProcessor", "PreProcessor", "SlingPostOperation", "PostOperation",
+        "TransformerFactory", "GeneratorFactory", "SerializerFactory", "BindingsValuesProvider",
+        "ResourceListener", "RequestListener", "ServletRequestListener", "ServletContextListener"
+    );
+
+    private static boolean isWhiteboardService(CodeNode svc) {
+        String name = svc.getName();
+        String simpleName = name.substring(name.lastIndexOf('.') + 1);
+        return WHITEBOARD_SERVICES.contains(simpleName);
     }
 
     public List<String> findSymbol(String name) {

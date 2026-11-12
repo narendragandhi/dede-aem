@@ -17,9 +17,11 @@ import java.util.TreeMap;
  * and the graph-based readiness checks (OSGi wiring, servlets, models). Before this class the
  * CLI gate counted both while the Maven plugin's {@code failOnCritical} counted only the graph
  * checks, so a CRITICAL catalog finding failed one build and passed the other. Both now gate on
- * {@link #criticalCount()} here.
+ * {@link #criticalCount()} here. Opt-in {@link ExtendedChecks} findings (content packages,
+ * legacy paths, service users) are included when enabled.
  */
-public record CloudFindings(ForbiddenApiScanner.ScanResult forbiddenApis, CloudReadinessReport readiness) {
+public record CloudFindings(ForbiddenApiScanner.ScanResult forbiddenApis, CloudReadinessReport readiness,
+                            List<Finding> extended) {
 
     public static final String SOURCE_FORBIDDEN_API = "forbidden-api";
     public static final String SOURCE_CLOUD_READINESS = "cloud-readiness";
@@ -27,6 +29,11 @@ public record CloudFindings(ForbiddenApiScanner.ScanResult forbiddenApis, CloudR
     /** One finding from either source, in a common shape. */
     public record Finding(String source, String category, String severity, String file, int line,
                           String message, String target, String type, String replacement, String cwe) {}
+
+    /** Default checks only (no {@link ExtendedChecks}). */
+    public CloudFindings(ForbiddenApiScanner.ScanResult forbiddenApis, CloudReadinessReport readiness) {
+        this(forbiddenApis, readiness, List.of());
+    }
 
     public List<Finding> all() {
         List<Finding> findings = new ArrayList<>();
@@ -38,6 +45,7 @@ public record CloudFindings(ForbiddenApiScanner.ScanResult forbiddenApis, CloudR
             findings.add(new Finding(SOURCE_CLOUD_READINESS, issue.getCategory().name(), issue.getSeverity().name(),
                 issue.getFile(), issue.getLineNumber(), issue.getMessage(), null, null, null, null));
         }
+        findings.addAll(extended);
         return findings;
     }
 
@@ -46,9 +54,11 @@ public record CloudFindings(ForbiddenApiScanner.ScanResult forbiddenApis, CloudR
     }
 
     public int criticalCount() {
-        return forbiddenApis.getCriticalCount() + (int) readiness.getIssues().stream()
-            .filter(i -> i.getSeverity() == CloudReadinessAnalyzer.Severity.CRITICAL)
-            .count();
+        return forbiddenApis.getCriticalCount()
+            + (int) readiness.getIssues().stream()
+                .filter(i -> i.getSeverity() == CloudReadinessAnalyzer.Severity.CRITICAL)
+                .count()
+            + (int) extended.stream().filter(f -> "CRITICAL".equals(f.severity())).count();
     }
 
     public Map<String, Long> countBySeverity() {

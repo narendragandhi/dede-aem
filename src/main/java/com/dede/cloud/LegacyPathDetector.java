@@ -1,5 +1,7 @@
 package com.dede.cloud;
 
+import com.dede.discovery.ScanExclusions;
+
 import com.dede.domain.GraphService;
 import com.dede.domain.model.CodeNode;
 import com.dede.domain.model.NodeType;
@@ -81,6 +83,7 @@ public class LegacyPathDetector {
 
         try (Stream<Path> paths = Files.walk(projectRoot)) {
             paths.filter(Files::isRegularFile)
+                 .filter(p -> !ScanExclusions.isExcluded(projectRoot, p))
                  .filter(p -> p.toString().endsWith(".content.xml"))
                  .forEach(xmlFile -> {
                      try {
@@ -106,6 +109,7 @@ public class LegacyPathDetector {
 
         try (Stream<Path> paths = Files.walk(projectRoot)) {
             paths.filter(Files::isRegularFile)
+                 .filter(p -> !ScanExclusions.isExcluded(projectRoot, p))
                  .filter(p -> p.toString().endsWith(".java"))
                  .forEach(javaFile -> {
                      try {
@@ -131,6 +135,7 @@ public class LegacyPathDetector {
 
         try (Stream<Path> paths = Files.walk(projectRoot)) {
             paths.filter(Files::isRegularFile)
+                 .filter(p -> !ScanExclusions.isExcluded(projectRoot, p))
                  .filter(p -> {
                      String name = p.toString().toLowerCase();
                      return name.endsWith(".html") || name.endsWith(".htl");
@@ -159,6 +164,7 @@ public class LegacyPathDetector {
 
         try (Stream<Path> paths = Files.walk(projectRoot)) {
             paths.filter(Files::isRegularFile)
+                 .filter(p -> !ScanExclusions.isExcluded(projectRoot, p))
                  .filter(p -> p.toString().endsWith("filter.xml"))
                  .forEach(filterFile -> {
                      try {
@@ -206,7 +212,8 @@ public class LegacyPathDetector {
                     legacyPath.get().path(),
                     legacyPath.get().migrationTarget(),
                     legacyPath.get().description(),
-                    sourceType
+                    sourceType,
+                    legacyPath.get().severity()
                 ));
             }
         }
@@ -239,7 +246,8 @@ public class LegacyPathDetector {
                     legacyPath.get().path(),
                     legacyPath.get().migrationTarget(),
                     "Filter.xml includes legacy path: " + legacyPath.get().description(),
-                    "Package Filter"
+                    LegacyPathViolation.SOURCE_PACKAGE_FILTER,
+                    legacyPath.get().severity()
                 ));
             }
         }
@@ -310,8 +318,20 @@ public class LegacyPathDetector {
         String legacyPath,
         String migrationTarget,
         String description,
-        String sourceType
-    ) {}
+        String sourceType,
+        ForbiddenApiCatalog.PathSeverity severity
+    ) {
+        public static final String SOURCE_PACKAGE_FILTER = "Package Filter";
+
+        /**
+         * True when the project deploys content to the legacy location (a filter.xml root).
+         * Other violations only reference the path from code or content, which is a migration
+         * hint rather than a deployment failure -- e.g. every Touch UI dialog references /libs.
+         */
+        public boolean isDeployment() {
+            return SOURCE_PACKAGE_FILTER.equals(sourceType);
+        }
+    }
 
     public record LegacyPathReport(
         List<LegacyPathViolation> violations,

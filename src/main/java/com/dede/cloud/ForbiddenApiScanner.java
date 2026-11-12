@@ -12,9 +12,7 @@ import com.github.javaparser.ast.CompilationUnit;
 import com.github.javaparser.ast.ImportDeclaration;
 import com.github.javaparser.ast.expr.MethodCallExpr;
 import com.github.javaparser.ast.expr.AnnotationExpr;
-import com.github.javaparser.ast.body.ClassOrInterfaceDeclaration;
 import com.github.javaparser.ast.body.VariableDeclarator;
-import com.github.javaparser.ast.visitor.VoidVisitorAdapter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -393,87 +391,6 @@ public class ForbiddenApiScanner {
         return input.replaceAll("[^a-zA-Z0-9_.-]", "_");
     }
 
-    // --- Administrative Session Detection (Bead 3.4) ---
-
-    /**
-     * Specifically scans for administrative session usage patterns.
-     */
-    public List<AdminSessionViolation> scanForAdminSessions(Path projectRoot) {
-        List<AdminSessionViolation> violations = new ArrayList<>();
-
-        Set<String> adminPatterns = Set.of(
-            "loginAdministrative",
-            "getAdministrativeResourceResolver",
-            "impersonateUsingAdministrator"
-        );
-
-        try (Stream<Path> paths = Files.walk(projectRoot)) {
-            paths.filter(Files::isRegularFile)
-                 .filter(p -> p.toString().endsWith(".java"))
-                 .filter(p -> !ScanExclusions.isExcluded(projectRoot, p))
-                 .forEach(javaFile -> {
-                     try {
-                         String source = Files.readString(javaFile);
-                         ParseResult<CompilationUnit> parseResult = newParser().parse(source);
-
-                         if (parseResult.isSuccessful() && parseResult.getResult().isPresent()) {
-                             CompilationUnit cu = parseResult.getResult().get();
-
-                             cu.findAll(MethodCallExpr.class).forEach(methodCall -> {
-                                 String methodName = methodCall.getNameAsString();
-
-                                 if (adminPatterns.contains(methodName)) {
-                                     int line = methodCall.getBegin().map(p -> p.line).orElse(0);
-
-                                     // Try to get the containing class
-                                     String className = methodCall.findAncestor(ClassOrInterfaceDeclaration.class)
-                                         .map(c -> c.getNameAsString())
-                                         .orElse("Unknown");
-
-                                     violations.add(new AdminSessionViolation(
-                                         javaFile.toString(),
-                                         line,
-                                         methodName,
-                                         className,
-                                         suggestServiceUserFix(className, methodName)
-                                     ));
-                                 }
-                             });
-                         }
-                     } catch (IOException e) {
-                         log.warn("Failed to scan file for admin sessions: {}", javaFile, e);
-                     }
-                 });
-        } catch (IOException e) {
-            log.error("Failed to scan project for admin sessions: {}", projectRoot, e);
-        }
-
-        return violations;
-    }
-
-    /**
-     * Suggests a fix for administrative session usage.
-     */
-    private String suggestServiceUserFix(String className, String methodName) {
-        return String.format("""
-            Replace %s() with service user authentication:
-
-            1. Create a service user mapping in OSGi config:
-               org.apache.sling.serviceusermapping.impl.ServiceUserMapperImpl.amended-<project>.cfg.json
-               {
-                 "user.mapping": ["<bundle-symbolic-name>:<subservice>=%s-service-user"]
-               }
-
-            2. Update code to use ServiceUserMapped:
-               @Reference(target = "(subServiceName=<subservice>)")
-               private ResourceResolverFactory resolverFactory;
-
-               Map<String, Object> params = Collections.singletonMap(
-                   ResourceResolverFactory.SUBSERVICE, "<subservice>");
-               ResourceResolver resolver = resolverFactory.getServiceResourceResolver(params);
-            """, methodName, className.toLowerCase());
-    }
-
     // --- Record Types ---
 
     public enum ViolationType {
@@ -509,14 +426,6 @@ public class ForbiddenApiScanner {
             return "https://cwe.mitre.org/data/definitions/" + cweId.replace("CWE-", "") + ".html";
         }
     }
-
-    public record AdminSessionViolation(
-        String filePath,
-        int line,
-        String methodName,
-        String className,
-        String suggestedFix
-    ) {}
 
     public record ScanResult(
         List<ForbiddenApiViolation> violations

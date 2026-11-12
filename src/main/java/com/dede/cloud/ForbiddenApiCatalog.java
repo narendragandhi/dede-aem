@@ -288,8 +288,10 @@ public class ForbiddenApiCatalog {
      * Checks if a JCR path is a legacy path that needs migration.
      */
     public Optional<LegacyPath> checkPath(String jcrPath) {
+        // Match the path or anything below it, on a segment boundary: /etc/dam must not
+        // match /etc/damage, nor /libs match /libsx.
         return legacyPaths.stream()
-            .filter(lp -> jcrPath.startsWith(lp.path()))
+            .filter(lp -> jcrPath.equals(lp.path()) || jcrPath.startsWith(lp.path() + "/"))
             .findFirst();
     }
 

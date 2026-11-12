@@ -68,6 +68,7 @@ Run `--help` for the full list (source of truth: `KNOWN_FLAGS` and `printHelp()`
 --json <path>       Findings + graph stats + suggestions as JSON
 --sarif <path>      Forbidden-API findings as SARIF 2.1.0
 --fail-on-critical  Exit 1 on any CRITICAL finding (CI gate)
+--extended-checks   Add OakPal content-package, legacy-path, service-user checks
 --dot <path.dot>    Export dependency graph to DOT format
 --security          Enable security surface audit
 --snapshot <dir>    Save graph snapshot
@@ -75,6 +76,12 @@ Run `--help` for the full list (source of truth: `KNOWN_FLAGS` and `printHelp()`
 ```
 
 Default scan exclusions live in `discovery/ScanExclusions.java`.
+
+All gates and reports read one set of findings: `cloud/CloudFindings` (catalog scan +
+`CloudReadinessAnalyzer` graph checks + opt-in `cloud/ExtendedChecks`). Add new checks there,
+not as a parallel report. After any rule change, re-run against WKND, aem-core-wcm-components
+and ACS AEM Commons and inspect every new CRITICAL/HIGH: that is how the false positives in
+this repo were found.
 
 ## Testing
 

@@ -76,6 +76,14 @@ public class DedeCheckMojo extends AbstractMojo {
     private boolean failOnCritical;
 
     /**
+     * Also run the extended checks: OakPal validation of built content packages (bind to a
+     * phase after package, e.g. the default verify), legacy-path deployment and service-user
+     * mapping checks. Their CRITICAL findings count toward failOnCritical.
+     */
+    @Parameter(property = "dede.extendedChecks", defaultValue = "false")
+    private boolean extendedChecks;
+
+    /**
      * Enables ratchet mode (the Sentinel-Twin gate): when set, the build fails only on
      * forbidden-API violations that are NOT already recorded in this baseline file.
      * Pre-existing debt stays green; every NEW legacy import or call fails the build.
@@ -164,7 +172,7 @@ public class DedeCheckMojo extends AbstractMojo {
         // Collected once, through the same service the CLI's --fail-on-critical uses, so the
         // critical gate, SARIF export and ratchet all see exactly the same findings -- and a
         // scan failure fails the build instead of being swallowed by a report writer.
-        CloudFindings findings = cloudFindings.collect(Path.of(projectPathStr));
+        CloudFindings findings = cloudFindings.collect(Path.of(projectPathStr), extendedChecks);
         CloudReadinessReport cloudReport = findings.readiness();
         ScanResult scanResult = findings.forbiddenApis();
         Map<String, Long> bySeverity = findings.countBySeverity();

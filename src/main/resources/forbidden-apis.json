@@ -979,11 +979,6 @@
       "description": "MSM configuration should use context-aware config"
     },
     {
-      "pid": "org.apache.sling.commons.log.LogManager.factory.config",
-      "severity": "MINOR",
-      "description": "Logging is managed via Cloud Manager - use environment-specific configs"
-    },
-    {
       "pid": "com.day.cq.mailer.DefaultMailService",
       "severity": "MAJOR",
       "description": "Email service must use Cloud Manager environment variables for SMTP"

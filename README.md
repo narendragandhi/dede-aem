@@ -16,7 +16,7 @@ A static analysis tool for validating AEM codebase compatibility with AEM as a C
 
 [![Java Version](https://img.shields.io/badge/Java-21-blue)](https://openjdk.org/projects/jdk/21/)
 [![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.2.0-green)](https://spring.io/projects/spring-boot)
-[![Tests](https://img.shields.io/badge/Tests-285%20passing-brightgreen)]()
+[![Tests](https://img.shields.io/badge/Tests-293%20passing-brightgreen)]()
 [![Docker](https://img.shields.io/badge/ghcr.io-dede--java-blue)](https://github.com/features/packages)
 
 ---
@@ -91,6 +91,7 @@ Options:
   --dot <path.dot>         Export dependency graph to DOT format
   --json <path.json>       Export findings, graph stats and suggestions as JSON
   --fail-on-critical       Exit with code 1 if any CRITICAL finding exists (CI gate)
+  --extended-checks        Also run content-package, legacy-path and service-user checks (see below)
   --security               Enable security surface audit
   --sarif <path.sarif.json> Export forbidden-API findings as SARIF 2.1.0
 ```
@@ -123,6 +124,24 @@ A selection; the full list with matched packages/classes is in
 | `UNCLOSED_RESOURCE_RESOLVER` | HIGH | Factory-opened ResourceResolver never closed |
 | `HARDCODED_PATHS` | MEDIUM | Hardcoded `/apps` and `/libs` paths in code |
 | ... | ... | 24 categories total |
+
+### Extended Checks (opt-in)
+
+`--extended-checks` (CLI) or `-Ddede.extendedChecks=true` (Maven) adds three checks. Their
+findings appear in the JSON report and count toward `--fail-on-critical` / `failOnCritical`.
+
+| Source | What it checks | Severity |
+|--------|----------------|----------|
+| `content-package` | OakPal validation of built packages (`*.zip` under `target/` of `ui.apps`, `ui.content`, `ui.config`, `all`): ACLs, OSGi configs (deprecated PIDs, singleton cloud-managed PIDs, plain-text secrets) | SEVERE → CRITICAL, MAJOR → HIGH, MINOR → MEDIUM |
+| `legacy-path` | `filter.xml` roots that deploy to locations Cloud Service forbids or manages (`/libs`, `/etc/designs`, `/etc/dam`, ...) | Catalog severity: SEVERE → CRITICAL, MAJOR → HIGH |
+| `legacy-path` | References to legacy paths in Java, HTL and `.content.xml` (references to `/libs` are skipped) | MEDIUM (migration hint) |
+| `service-user` | Service user mappings to `admin` or with wildcard bundles | CRITICAL / HIGH |
+
+Run `mvn package` first so OakPal has packages to validate. Validation is offline, against an
+in-memory repository without AEM's node types, so import errors that only come from missing
+product node types or parent nodes are skipped (and counted in the log) rather than reported.
+Factory configurations such as `RepositoryInitializer~myproject.cfg.json` are the supported way
+to customize cloud-managed services and are not flagged.
 
 ### Dependency Analysis
 
@@ -464,6 +483,7 @@ All parameters are optional:
 | `baselineFile` | *(none)* | Enables **ratchet mode** (see below): fail only on forbidden-API violations not already in this baseline |
 | `updateBaseline` | `false` | With `baselineFile`: rewrite it from current findings instead of gating (`-Ddede.updateBaseline=true`) |
 | `multiModuleRoot` | `${maven.multiModuleProjectDirectory}` | Root used to relativize baseline keys -- in a reactor this makes each module's findings distinct against one shared baseline |
+| `extendedChecks` | `false` | Also run content-package (OakPal), legacy-path and service-user checks (`-Ddede.extendedChecks=true`); see Extended Checks |
 | `skip` | `false` | Skip entirely (`-Ddede.skip=true`) |
 
 Both gates always evaluate: a single build failure lists CRITICAL findings *and* new ratchet violations together, so neither report hides the other.

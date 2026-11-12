@@ -79,6 +79,7 @@ public class DedeApplication {
             boolean watchMode = false;
             String jsonOutputPath = null;
             boolean failOnCritical = false;
+            boolean extendedChecks = false;
 
             for (int i = 1; i < args.length; i++) {
                 if (args[i].startsWith("--") && !KNOWN_FLAGS.contains(args[i])) {
@@ -89,6 +90,9 @@ public class DedeApplication {
                 }
                 if ("--fail-on-critical".equals(args[i])) {
                     failOnCritical = true;
+                }
+                if ("--extended-checks".equals(args[i])) {
+                    extendedChecks = true;
                 }
                 if ("--rules".equals(args[i]) && i + 1 < args.length) {
                     rulesPath = args[i + 1];
@@ -217,7 +221,7 @@ public class DedeApplication {
             // JSON report and --fail-on-critical -- the same set the Maven plugin gates on.
             Path scanRoot = Path.of(projectPath);
             boolean needFindings = sarifOutputPath != null || jsonOutputPath != null || failOnCritical;
-            CloudFindings findings = needFindings ? cloudFindings.collect(scanRoot) : null;
+            CloudFindings findings = needFindings ? cloudFindings.collect(scanRoot, extendedChecks) : null;
 
             // SARIF Report (for GitHub Code Scanning, VS Code Problems panel, SIEMs)
             if (sarifOutputPath != null) {
@@ -284,7 +288,7 @@ public class DedeApplication {
     private static final Set<String> KNOWN_FLAGS = Set.of(
         "--help", "-h", "--rules", "--dot", "--analyze", "--security", "--profiles", "--snapshot",
         "--compare", "--bpa-report", "--sarif", "--suggestions", "--dependency-check-report",
-        "--cloud-readiness", "--watch", "--json", "--fail-on-critical");
+        "--cloud-readiness", "--watch", "--json", "--fail-on-critical", "--extended-checks");
 
     private static Map<String, Object> buildJsonReport(String projectPath, GraphService graphService,
                                                        CloudFindings findings, List<String> suggestions) {
@@ -335,6 +339,7 @@ public class DedeApplication {
         log.info("  --suggestions <path.json> Export refactoring suggestions as JSON");
         log.info("  --json <path.json>  Export findings (forbidden-API + cloud-readiness), graph stats and suggestions as JSON");
         log.info("  --fail-on-critical  Exit with code 1 if any CRITICAL finding exists (CI gate)");
+        log.info("  --extended-checks   Also run content-package (OakPal; needs 'mvn package' first), legacy-path and service-user checks");
         log.info("Skipped by default: .git, node_modules, it.tests, ui.tests, Maven target/ and src/test/");
         log.info("  --watch             Start watching for file changes and update incrementally");
         log.info("");

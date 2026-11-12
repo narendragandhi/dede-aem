@@ -1,5 +1,6 @@
 package com.dede.maven;
 
+import com.dede.cloud.CloudFindings;
 import com.dede.cloud.ForbiddenApiScanner;
 import com.dede.intelligence.CloudReadinessAnalyzer.CloudIssue;
 import com.dede.intelligence.CloudReadinessAnalyzer.CloudReadinessReport;
@@ -37,6 +38,32 @@ class DedeCheckMojoTest {
         return report;
     }
 
+    private static CloudFindings onlyReadiness(CloudReadinessReport report) {
+        return new CloudFindings(new ForbiddenApiScanner.ScanResult(List.of()), report);
+    }
+
+    /**
+     * Regression guard: failOnCritical used to count only the graph readiness checks, so a
+     * CRITICAL forbidden-API finding failed the CLI gate but passed the Maven build.
+     */
+    @Test
+    void criticalForbiddenApiFindingFailsTheBuild() {
+        DedeCheckMojo mojo = new DedeCheckMojo();
+        mojo.setFailOnCritical(true);
+        CloudFindings findings = new CloudFindings(
+            new ForbiddenApiScanner.ScanResult(List.of(new ForbiddenApiScanner.ForbiddenApiViolation(
+                "core/src/main/java/foo/Bar.java", 7, ForbiddenApiScanner.ViolationType.FORBIDDEN_IMPORT,
+                "com.day.cq.wcm.core.impl.PageImpl", "INTERNAL_API",
+                com.dede.cloud.ForbiddenApiCatalog.Severity.CRITICAL,
+                "Internal implementation APIs that are not part of the public API", "Use public APIs"))),
+            reportWith());
+
+        assertThat(mojo.checkCritical(findings))
+            .contains("1 CRITICAL")
+            .contains("[INTERNAL_API]")
+            .contains("core/src/main/java/foo/Bar.java:7");
+    }
+
     @Test
     void reportsCriticalIssueWhenFailOnCriticalEnabled() {
         DedeCheckMojo mojo = new DedeCheckMojo();
@@ -47,7 +74,7 @@ class DedeCheckMojoTest {
                 "AdminServlet.java", 12)
         );
 
-        assertThat(mojo.checkCritical(report))
+        assertThat(mojo.checkCritical(onlyReadiness(report)))
             .contains("1 CRITICAL")
             .contains("admin session/resolver");
     }
@@ -61,7 +88,7 @@ class DedeCheckMojoTest {
             new CloudIssue(Severity.MEDIUM, Category.DEPRECATED_API, "Medium severity only", "Bar.java", 2)
         );
 
-        assertThat(mojo.checkCritical(report)).isNull();
+        assertThat(mojo.checkCritical(onlyReadiness(report))).isNull();
     }
 
     @Test
@@ -69,7 +96,7 @@ class DedeCheckMojoTest {
         DedeCheckMojo mojo = new DedeCheckMojo();
         mojo.setFailOnCritical(true);
 
-        assertThat(mojo.checkCritical(reportWith())).isNull();
+        assertThat(mojo.checkCritical(onlyReadiness(reportWith()))).isNull();
     }
 
     @Test
@@ -80,7 +107,7 @@ class DedeCheckMojoTest {
             new CloudIssue(Severity.CRITICAL, Category.DEPRECATED_API, "Ignored by design", "Foo.java", 1)
         );
 
-        assertThat(mojo.checkCritical(report)).isNull();
+        assertThat(mojo.checkCritical(onlyReadiness(report))).isNull();
     }
 
     @Test
@@ -93,7 +120,7 @@ class DedeCheckMojoTest {
             new CloudIssue(Severity.HIGH, Category.DEPRECATED_API, "Not critical, excluded", "C.java", 3)
         );
 
-        String message = mojo.checkCritical(report);
+        String message = mojo.checkCritical(onlyReadiness(report));
         assertThat(message)
             .contains("2 CRITICAL")
             .contains("First critical issue")
@@ -296,7 +323,7 @@ class DedeCheckMojoTest {
 
         CloudReadinessReport report = reportWith(new CloudIssue(Severity.CRITICAL, Category.DEPRECATED_API,
             "admin session usage", "Foo.java", 1));
-        String criticalMsg = mojo.checkCritical(report);
+        String criticalMsg = mojo.checkCritical(onlyReadiness(report));
         String ratchetMsg = mojo.enforceRatchet(resultWith(
             violation("com.day.cq.replication.ReplicationOptions", "core/src/New.java", 3)));
 
@@ -304,7 +331,7 @@ class DedeCheckMojoTest {
         assertThat(ratchetMsg).isNotNull();
         String combined = String.join("\n", List.of(criticalMsg, ratchetMsg));
         assertThat(combined)
-            .contains("1 CRITICAL cloud-readiness issue")
+            .contains("1 CRITICAL finding")
             .contains("1 NEW forbidden-API violation")
             .contains("core/src/New.java");
     }

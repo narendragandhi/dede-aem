@@ -10,7 +10,8 @@ import com.dede.intelligence.VulnerabilityService;
 import com.dede.intelligence.GraphAgentSkills;
 import com.dede.intelligence.CloudReadinessAnalyzer;
 import com.dede.cloud.BpaReportGenerator;
-import com.dede.cloud.ForbiddenApiScanner;
+import com.dede.cloud.CloudFindings;
+import com.dede.cloud.CloudFindingsService;
 import com.dede.cloud.SarifReport;
 import com.dede.security.DependencyCveImporter;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -26,12 +27,10 @@ import org.springframework.context.annotation.Bean;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Path;
-import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.TreeMap;
 
 @SpringBootApplication
 public class DedeApplication {
@@ -49,7 +48,7 @@ public class DedeApplication {
                                              VulnerabilityService security, GraphAgentSkills agent,
                                              OsgiLinker osgiLinker, DeltaAnalyzer deltaAnalyzer,
                                              CloudReadinessAnalyzer cloudAnalyzer, BpaReportGenerator bpaGenerator,
-                                             ForbiddenApiScanner forbiddenApiScanner,
+                                             CloudFindingsService cloudFindings,
                                              DependencyCveImporter cveImporter,
                                              ConfigurableApplicationContext context) {
         return args -> {
@@ -214,19 +213,16 @@ public class DedeApplication {
                 log.info("BPA report saved to: {}", bpaReportPath);
             }
 
-            // Forbidden-API findings and cloud-readiness issues, computed once and shared by
-            // the SARIF export, the JSON report and the --fail-on-critical gate.
+            // One set of findings (catalog scan + graph checks), shared by the SARIF export, the
+            // JSON report and --fail-on-critical -- the same set the Maven plugin gates on.
             Path scanRoot = Path.of(projectPath);
             boolean needFindings = sarifOutputPath != null || jsonOutputPath != null || failOnCritical;
-            ForbiddenApiScanner.ScanResult scanResult = needFindings
-                ? forbiddenApiScanner.scanProject(scanRoot) : null;
-            CloudReadinessAnalyzer.CloudReadinessReport gateCloudReport =
-                (jsonOutputPath != null || failOnCritical) ? cloudAnalyzer.analyze() : null;
+            CloudFindings findings = needFindings ? cloudFindings.collect(scanRoot) : null;
 
             // SARIF Report (for GitHub Code Scanning, VS Code Problems panel, SIEMs)
             if (sarifOutputPath != null) {
                 log.info("Generating SARIF report: {}", sarifOutputPath);
-                SarifReport sarif = new SarifReport(scanResult.violations(), scanRoot);
+                SarifReport sarif = new SarifReport(findings.forbiddenApis().violations(), scanRoot);
 
                 ObjectMapper mapper = new ObjectMapper().enable(SerializationFeature.INDENT_OUTPUT);
                 try {
@@ -256,15 +252,9 @@ public class DedeApplication {
                 }
             }
 
-            int criticalCount = 0;
-            if (scanResult != null && gateCloudReport != null) {
-                criticalCount = scanResult.getCriticalCount() + countCritical(gateCloudReport);
-            }
-
             if (jsonOutputPath != null) {
                 log.info("Writing JSON report: {}", jsonOutputPath);
-                Map<String, Object> report = buildJsonReport(projectPath, graphService, scanResult,
-                    gateCloudReport, suggestions, criticalCount);
+                Map<String, Object> report = buildJsonReport(projectPath, graphService, findings, suggestions);
                 ObjectMapper mapper = new ObjectMapper().enable(SerializationFeature.INDENT_OUTPUT);
                 try {
                     mapper.writeValue(new File(jsonOutputPath), report);
@@ -276,9 +266,9 @@ public class DedeApplication {
             }
 
             int exitCode = 0;
-            if (failOnCritical && criticalCount > 0) {
-                log.error("{} CRITICAL finding(s) ({} forbidden-API, {} cloud-readiness). Failing (--fail-on-critical).",
-                    criticalCount, scanResult.getCriticalCount(), countCritical(gateCloudReport));
+            String criticalFailure = failOnCritical ? findings.criticalFailureMessage() : null;
+            if (criticalFailure != null) {
+                log.error("Failing (--fail-on-critical): {}", criticalFailure);
                 exitCode = 1;
             }
 
@@ -296,62 +286,19 @@ public class DedeApplication {
         "--compare", "--bpa-report", "--sarif", "--suggestions", "--dependency-check-report",
         "--cloud-readiness", "--watch", "--json", "--fail-on-critical");
 
-    private static int countCritical(CloudReadinessAnalyzer.CloudReadinessReport report) {
-        return (int) report.getIssues().stream()
-            .filter(i -> i.getSeverity() == CloudReadinessAnalyzer.Severity.CRITICAL)
-            .count();
-    }
-
     private static Map<String, Object> buildJsonReport(String projectPath, GraphService graphService,
-                                                       ForbiddenApiScanner.ScanResult scanResult,
-                                                       CloudReadinessAnalyzer.CloudReadinessReport cloudReport,
-                                                       List<String> suggestions, int criticalCount) {
-        List<Map<String, Object>> violations = new ArrayList<>();
-        for (ForbiddenApiScanner.ForbiddenApiViolation v : scanResult.violations()) {
-            Map<String, Object> entry = new LinkedHashMap<>();
-            entry.put("source", "forbidden-api");
-            entry.put("category", v.category());
-            entry.put("severity", v.severity().name());
-            entry.put("file", v.filePath());
-            entry.put("line", v.line());
-            entry.put("type", v.type().name());
-            entry.put("target", v.target());
-            entry.put("message", v.description());
-            entry.put("replacement", v.replacement());
-            entry.put("cwe", v.cweId());
-            violations.add(entry);
-        }
-        for (CloudReadinessAnalyzer.CloudIssue issue : cloudReport.getIssues()) {
-            Map<String, Object> entry = new LinkedHashMap<>();
-            entry.put("source", "cloud-readiness");
-            entry.put("category", issue.getCategory().name());
-            entry.put("severity", issue.getSeverity().name());
-            entry.put("file", issue.getFile());
-            entry.put("line", issue.getLineNumber());
-            entry.put("message", issue.getMessage());
-            violations.add(entry);
-        }
-
-        Map<String, Long> bySeverity = new TreeMap<>();
-        violations.forEach(v -> bySeverity.merge((String) v.get("severity"), 1L, Long::sum));
-
+                                                       CloudFindings findings, List<String> suggestions) {
         Map<String, Object> graph = new LinkedHashMap<>();
         graph.put("nodes", graphService.getNodeCount());
         graph.put("edges", graphService.getEdgeCount());
-
-        Map<String, Object> summary = new LinkedHashMap<>();
-        summary.put("total", violations.size());
-        summary.put("critical", criticalCount);
-        summary.put("bySeverity", bySeverity);
-        summary.put("cloudReadinessScore", cloudReport.getScore());
 
         Map<String, Object> report = new LinkedHashMap<>();
         report.put("tool", "dede");
         report.put("version", VERSION);
         report.put("project", projectPath);
-        report.put("summary", summary);
+        report.put("summary", findings.summary());
         report.put("graph", graph);
-        report.put("violations", violations);
+        report.put("violations", findings.all());
         report.put("suggestions", suggestions);
         return report;
     }

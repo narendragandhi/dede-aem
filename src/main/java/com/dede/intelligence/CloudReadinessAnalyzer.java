@@ -9,25 +9,17 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
-import java.io.IOException;
-import java.nio.file.*;
 import java.util.*;
-import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 /**
- * AEM Cloud Service Readiness Analyzer
+ * Graph-based AEM Cloud Service readiness checks: deprecated service usage, OSGi
+ * configurations, servlet registration and Sling Model patterns, read from the dependency
+ * graph built by ProjectScanner.
  *
- * Analyzes AEM projects for cloud service compatibility by detecting:
- * - Deprecated APIs and patterns
- * - Environment-specific code that won't work in cloud
- * - Hardcoded paths and configurations
- * - Non-cloud-compatible OSGi configurations
- * - JCR write operations in publish instances
- * - Admin session usage
- *
- * Based on Adobe's Cloud Service migration best practices:
- * https://experienceleague.adobe.com/docs/experience-manager-cloud-service/moving/refactoring-tools/index.html
+ * <p>Source-level rules live in the forbidden-API catalog (ForbiddenApiScanner). Gates and
+ * reports combine both through {@link com.dede.cloud.CloudFindings}; do not add a second
+ * source-file rule list here.
  */
 @Service
 public class CloudReadinessAnalyzer {
@@ -36,74 +28,6 @@ public class CloudReadinessAnalyzer {
 
     private final GraphService graphService;
     private final List<CloudIssue> issues = new ArrayList<>();
-
-    // Deprecated API patterns
-    private static final Map<Pattern, String> DEPRECATED_APIS = Map.ofEntries(
-        Map.entry(Pattern.compile("com\\.day\\.cq\\.commons\\.jcr\\.JcrUtil"),
-            "JcrUtil is deprecated. Use org.apache.sling.jcr.api instead"),
-        Map.entry(Pattern.compile("org\\.apache\\.sling\\.commons\\.json"),
-            "Sling Commons JSON is deprecated. Use javax.json or Jackson"),
-        Map.entry(Pattern.compile("com\\.day\\.cq\\.wcm\\.api\\.WCMMode\\.fromRequest"),
-            "Direct WCMMode access is discouraged in Cloud. Use request attributes"),
-        Map.entry(Pattern.compile("adminSession|getAdministrativeResourceResolver|loginAdministrative"),
-            "Admin session/resolver is forbidden in Cloud. Use service users instead"),
-        Map.entry(Pattern.compile("session\\.impersonate"),
-            "Session impersonation is not allowed in Cloud"),
-        Map.entry(Pattern.compile("ResourceResolverFactory\\.USER_IMPERSONATION"),
-            "User impersonation is restricted in Cloud Service"),
-        Map.entry(Pattern.compile("com\\.day\\.cq\\.dam\\.api\\.AssetManager\\.createAsset"),
-            "Direct asset creation deprecated. Use Asset APIs with proper service user"),
-        Map.entry(Pattern.compile("com\\.day\\.cq\\.replication\\.ReplicationAction"),
-            "Classic replication deprecated in Cloud. Use Sling Content Distribution"),
-        Map.entry(Pattern.compile("com\\.day\\.cq\\.workflow\\.exec\\.WorkflowProcess"),
-            "Legacy workflow API. Consider Granite workflow or process API"),
-        Map.entry(Pattern.compile("adaptTo\\(Node\\.class\\)|adaptTo\\(Session\\.class\\)"),
-            "Direct JCR access discouraged. Use Resource API patterns")
-    );
-
-    // Hardcoded paths that won't work in cloud
-    private static final Map<Pattern, String> HARDCODED_PATHS = Map.ofEntries(
-        Map.entry(Pattern.compile("/var/log"), "Log paths don't exist in Cloud"),
-        Map.entry(Pattern.compile("/tmp/"), "Temp paths are ephemeral in Cloud"),
-        Map.entry(Pattern.compile("/crx/de"), "CRX/DE not available in Cloud prod"),
-        Map.entry(Pattern.compile("/system/console"), "Felix console restricted in Cloud"),
-        Map.entry(Pattern.compile("localhost:\\d+"), "Hardcoded localhost URLs won't work in Cloud"),
-        Map.entry(Pattern.compile("file:/"), "Local file system access not available"),
-        Map.entry(Pattern.compile("/apps/[\\w-]+/install"), "Install folders behavior different in Cloud"),
-        Map.entry(Pattern.compile("\\.infinity\\.json"), "Infinity JSON selector removed for security")
-    );
-
-    // OSGi configuration anti-patterns for cloud
-    private static final Map<Pattern, String> OSGI_ANTIPATTERNS = Map.ofEntries(
-        Map.entry(Pattern.compile("runmode\\.author\\.dev|runmode\\.publish\\.dev"),
-            "Dev runmodes don't exist in Cloud. Use config.author.dev/stage/prod"),
-        Map.entry(Pattern.compile("immediate\\s*=\\s*true"),
-            "immediate=true can cause startup issues. Use careful ordering"),
-        Map.entry(Pattern.compile("configuration-policy\\s*=\\s*\"require\""),
-            "Strict config policy may fail if config not deployed properly")
-    );
-
-    // Cloud-incompatible patterns in code
-    private static final Map<Pattern, String> CLOUD_INCOMPATIBLE = Map.ofEntries(
-        Map.entry(Pattern.compile("Thread\\.sleep"),
-            "Thread.sleep is unreliable in Cloud's auto-scaling environment"),
-        Map.entry(Pattern.compile("new\\s+Thread\\("),
-            "Manual thread creation discouraged. Use Sling Jobs or Commons Scheduler"),
-        Map.entry(Pattern.compile("Runtime\\.getRuntime\\(\\)\\.exec"),
-            "External process execution not allowed in Cloud"),
-        Map.entry(Pattern.compile("System\\.getProperty"),
-            "System properties differ in Cloud. Use OSGi configuration"),
-        Map.entry(Pattern.compile("System\\.getenv"),
-            "Environment variables require Cloud Manager config"),
-        Map.entry(Pattern.compile("@SlingServlet.*paths\\s*="),
-            "Path-based servlets restricted. Use resourceTypes instead"),
-        Map.entry(Pattern.compile("session\\.save\\(\\)"),
-            "Direct session.save() risky. Use ResourceResolver.commit() or AutoCloseable"),
-        Map.entry(Pattern.compile("Class\\.forName"),
-            "Dynamic class loading may fail with Cloud classloader"),
-        Map.entry(Pattern.compile("ServiceLoader"),
-            "ServiceLoader won't find services across OSGi bundles")
-    );
 
     public CloudReadinessAnalyzer(GraphService graphService) {
         this.graphService = graphService;
@@ -131,156 +55,6 @@ public class CloudReadinessAnalyzer {
             issues.size(), report.getScore());
 
         return report;
-    }
-
-    /**
-     * Analyze source files directly for cloud incompatibilities.
-     */
-    public CloudReadinessReport analyzeSourceFiles(Path projectPath) throws IOException {
-        issues.clear();
-        log.info("Analyzing source files for Cloud readiness: {}", projectPath);
-
-        // Walk Java files
-        try (var stream = Files.walk(projectPath)) {
-            stream.filter(p -> p.toString().endsWith(".java"))
-                  .filter(p -> !p.toString().contains("/test/"))
-                  .forEach(this::analyzeJavaFile);
-        }
-
-        // Walk OSGi configs
-        try (var stream = Files.walk(projectPath)) {
-            stream.filter(p -> p.toString().matches(".*\\.(cfg|config|cfg\\.json)$"))
-                  .forEach(this::analyzeOsgiConfigFile);
-        }
-
-        // Walk XML configs
-        try (var stream = Files.walk(projectPath)) {
-            stream.filter(p -> p.toString().endsWith(".xml"))
-                  .filter(p -> p.toString().contains("/config"))
-                  .forEach(this::analyzeXmlConfig);
-        }
-
-        CloudReadinessReport report = new CloudReadinessReport();
-        report.setIssues(new ArrayList<>(issues));
-        report.calculateScore();
-
-        return report;
-    }
-
-    private void analyzeJavaFile(Path file) {
-        try {
-            String content = Files.readString(file);
-            String relativePath = file.toString();
-
-            // Check deprecated APIs
-            DEPRECATED_APIS.forEach((pattern, message) -> {
-                if (pattern.matcher(content).find()) {
-                    issues.add(new CloudIssue(
-                        Severity.HIGH,
-                        Category.DEPRECATED_API,
-                        message,
-                        relativePath,
-                        findLineNumber(content, pattern)
-                    ));
-                }
-            });
-
-            // Check hardcoded paths
-            HARDCODED_PATHS.forEach((pattern, message) -> {
-                if (pattern.matcher(content).find()) {
-                    issues.add(new CloudIssue(
-                        Severity.MEDIUM,
-                        Category.HARDCODED_PATH,
-                        message,
-                        relativePath,
-                        findLineNumber(content, pattern)
-                    ));
-                }
-            });
-
-            // Check cloud-incompatible patterns
-            CLOUD_INCOMPATIBLE.forEach((pattern, message) -> {
-                if (pattern.matcher(content).find()) {
-                    issues.add(new CloudIssue(
-                        Severity.HIGH,
-                        Category.CLOUD_INCOMPATIBLE,
-                        message,
-                        relativePath,
-                        findLineNumber(content, pattern)
-                    ));
-                }
-            });
-
-        } catch (IOException e) {
-            log.warn("Failed to analyze file: {}", file, e);
-        }
-    }
-
-    private void analyzeOsgiConfigFile(Path file) {
-        try {
-            String content = Files.readString(file);
-            String relativePath = file.toString();
-
-            OSGI_ANTIPATTERNS.forEach((pattern, message) -> {
-                if (pattern.matcher(content).find()) {
-                    issues.add(new CloudIssue(
-                        Severity.MEDIUM,
-                        Category.OSGI_CONFIG,
-                        message,
-                        relativePath,
-                        findLineNumber(content, pattern)
-                    ));
-                }
-            });
-
-            // Check for cloud-invalid config folder naming
-            if (relativePath.contains("/config.author/") || relativePath.contains("/config.publish/")) {
-                // These are valid for cloud
-            } else if (relativePath.matches(".*config\\.[a-z]+\\.dev.*")) {
-                issues.add(new CloudIssue(
-                    Severity.MEDIUM,
-                    Category.OSGI_CONFIG,
-                    "Dev runmode configs may not be needed. Cloud uses dev/stage/prod tiers.",
-                    relativePath,
-                    0
-                ));
-            }
-
-        } catch (IOException e) {
-            log.warn("Failed to analyze OSGi config: {}", file, e);
-        }
-    }
-
-    private void analyzeXmlConfig(Path file) {
-        try {
-            String content = Files.readString(file);
-            String relativePath = file.toString();
-
-            // Check for replication agent configs
-            if (content.contains("cq:ReplicationConfig") || content.contains("replication/agents")) {
-                issues.add(new CloudIssue(
-                    Severity.HIGH,
-                    Category.CLOUD_INCOMPATIBLE,
-                    "Classic replication agents not used in Cloud. Content is distributed automatically.",
-                    relativePath,
-                    0
-                ));
-            }
-
-            // Check for workflow launcher configs that might conflict
-            if (content.contains("cq:WorkflowLauncher") && content.contains("jcr:content/dam")) {
-                issues.add(new CloudIssue(
-                    Severity.MEDIUM,
-                    Category.CLOUD_INCOMPATIBLE,
-                    "Custom DAM workflow launchers may conflict with Cloud processing.",
-                    relativePath,
-                    0
-                ));
-            }
-
-        } catch (IOException e) {
-            log.warn("Failed to analyze XML config: {}", file, e);
-        }
     }
 
     private void analyzeDeprecatedServiceUsage() {
@@ -370,15 +144,6 @@ public class CloudReadinessAnalyzer {
                 }
             }
         }
-    }
-
-    private int findLineNumber(String content, Pattern pattern) {
-        var matcher = pattern.matcher(content);
-        if (matcher.find()) {
-            String beforeMatch = content.substring(0, matcher.start());
-            return (int) beforeMatch.chars().filter(c -> c == '\n').count() + 1;
-        }
-        return 0;
     }
 
     /**

@@ -41,7 +41,7 @@ src/main/java/com/dede/
 
 - `pom.xml` - Maven configuration (Java 21, Spring Boot 3.2.0)
 - `src/main/resources/application.yml` - Server config (port 8080)
-- `src/main/resources/forbidden-apis.json` - Cloud violation rules (25 categories)
+- `src/main/resources/forbidden-apis.json` - Cloud violation rules (24 categories)
 - `profiles/aem.json` - AEM annotation mappings
 - `profiles/osgi.json` - OSGi annotation mappings
 

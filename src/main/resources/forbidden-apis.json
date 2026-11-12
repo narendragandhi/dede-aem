@@ -115,15 +115,6 @@
       "replacement": "AEM Communities is deprecated - use third-party solutions"
     },
     {
-      "name": "DEPRECATED_SCENE7",
-      "description": "Deprecated Scene7/Dynamic Media Classic APIs",
-      "severity": "HIGH",
-      "packages": [
-        "com.day.cq.dam.scene7"
-      ],
-      "replacement": "Use Dynamic Media with OpenAPI delivery"
-    },
-    {
       "name": "LOCAL_BINARY_STORAGE",
       "description": "Direct binary storage access (not compatible with cloud storage)",
       "severity": "CRITICAL",

@@ -16,7 +16,7 @@ A static analysis tool for validating AEM codebase compatibility with AEM as a C
 
 [![Java Version](https://img.shields.io/badge/Java-21-blue)](https://openjdk.org/projects/jdk/21/)
 [![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.2.0-green)](https://spring.io/projects/spring-boot)
-[![Tests](https://img.shields.io/badge/Tests-281%20passing-brightgreen)]()
+[![Tests](https://img.shields.io/badge/Tests-285%20passing-brightgreen)]()
 [![Docker](https://img.shields.io/badge/ghcr.io-dede--java-blue)](https://github.com/features/packages)
 
 ---
@@ -42,7 +42,7 @@ java -jar dede.jar /path/to/your-aem-project
 | Without Dede | With Dede |
 |--------------|-----------|
 | Run BPA, get XML blob, manually parse | JSON report, sorted by severity |
-| Grep for deprecated APIs one by one | 25 rule categories checked automatically |
+| Grep for deprecated APIs one by one | 24 rule categories checked automatically |
 | "I think this servlet is safe to delete" | Dependency graph shows what uses it |
 | Weeks of manual code review | Minutes |
 
@@ -104,7 +104,7 @@ Skipped by default: `.git/`, `node_modules/`, the `it.tests`/`ui.tests` modules,
 
 ## What It Detects
 
-### Cloud Readiness Violations (25 Categories)
+### Cloud Readiness Violations (24 Categories)
 
 A selection; the full list with matched packages/classes is in
 [`forbidden-apis.json`](src/main/resources/forbidden-apis.json).
@@ -122,7 +122,7 @@ A selection; the full list with matched packages/classes is in
 | `SERVLET_PATH_BINDING` | HIGH | Servlets registered by path instead of resource type |
 | `UNCLOSED_RESOURCE_RESOLVER` | HIGH | Factory-opened ResourceResolver never closed |
 | `HARDCODED_PATHS` | MEDIUM | Hardcoded `/apps` and `/libs` paths in code |
-| ... | ... | 25 categories total |
+| ... | ... | 24 categories total |
 
 ### Dependency Analysis
 
@@ -433,7 +433,7 @@ cloud-readiness issue exists; the JSON report is still written first so it can b
 
 ### Maven Plugin
 
-Runs Dede as a real build step -- `mvn verify` fails on CRITICAL cloud-readiness issues, with ratchet support for codebases that already carry debt.
+Runs Dede as a real build step -- `mvn verify` fails on CRITICAL findings, with ratchet support for codebases that already carry debt. It gates on exactly the same findings as the CLI's `--fail-on-critical`: forbidden-API catalog findings plus graph-based readiness checks.
 
 ```xml
 <plugin>
@@ -460,13 +460,13 @@ All parameters are optional:
 | `dependencyCheckReport` | *(none)* | Path to an OWASP Dependency-Check JSON report, for CVE blast-radius ranking |
 | `sarifOutputFile` | `${project.build.directory}/dede-report.sarif.json` | Where to write SARIF findings |
 | `bpaReportFile` | `${project.build.directory}/dede-bpa-report.json` | Where to write the BPA-compatible report |
-| `failOnCritical` | `true` | Fail the build on any CRITICAL cloud-readiness issue |
+| `failOnCritical` | `true` | Fail the build on any CRITICAL finding (forbidden-API or cloud-readiness) |
 | `baselineFile` | *(none)* | Enables **ratchet mode** (see below): fail only on forbidden-API violations not already in this baseline |
 | `updateBaseline` | `false` | With `baselineFile`: rewrite it from current findings instead of gating (`-Ddede.updateBaseline=true`) |
 | `multiModuleRoot` | `${maven.multiModuleProjectDirectory}` | Root used to relativize baseline keys -- in a reactor this makes each module's findings distinct against one shared baseline |
 | `skip` | `false` | Skip entirely (`-Ddede.skip=true`) |
 
-Both gates always evaluate: a single build failure lists CRITICAL cloud-readiness issues *and* new ratchet violations together, so neither report hides the other.
+Both gates always evaluate: a single build failure lists CRITICAL findings *and* new ratchet violations together, so neither report hides the other.
 
 #### Ratchet mode (Sentinel-Twin gate)
 

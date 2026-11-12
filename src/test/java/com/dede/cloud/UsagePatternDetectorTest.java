@@ -97,6 +97,25 @@ class UsagePatternDetectorTest {
                 """)).containsExactly("DEPRECATED_DAM");
         }
 
+        /** Package-pattern rules used to match nothing: matches() needed the exact package name. */
+        @Test
+        void packagePatternRulesMatchClassImports() throws IOException {
+            assertThat(categories("""
+                import com.day.cq.wcm.core.impl.PageImpl;
+                import com.adobe.cq.social.commons.Comment;
+                public class UsesInternals {}
+                """)).containsExactly("INTERNAL_API", "DEPRECATED_SOCIAL");
+        }
+
+        @Test
+        void packagePatternDoesNotMatchLookalikePackages() throws IOException {
+            assertThat(categories("""
+                import com.day.cq.wcm.implementation.Helper;
+                import com.adobe.cq.socialmedia.Share;
+                public class Lookalikes {}
+                """)).isEmpty();
+        }
+
         @Test
         void replicationAgentsAreStillFlagged() throws IOException {
             assertThat(categories("""

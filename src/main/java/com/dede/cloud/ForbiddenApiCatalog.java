@@ -123,7 +123,10 @@ public class ForbiddenApiCatalog {
                     String regex = packagePattern
                         .replace(".", "\\.")
                         .replace("*", ".*");
-                    packagePatterns.put(packagePattern, Pattern.compile("^" + regex));
+                    // Match the package itself (wildcard imports) and any class or subpackage
+                    // in it. checkClass() uses matches(), so without the suffix a pattern
+                    // like com.day.cq.*.impl never matched com.day.cq.wcm.core.impl.PageImpl.
+                    packagePatterns.put(packagePattern, Pattern.compile("^" + regex + "(\\..+)?$"));
                 }
             }
 

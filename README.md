@@ -91,6 +91,7 @@ Options:
   --dot <path.dot>         Export dependency graph to DOT format
   --json <path.json>       Export findings, graph stats and suggestions as JSON
   --fail-on-critical       Exit with code 1 if any CRITICAL finding exists (CI gate)
+  --fail-on <level>        Exit with code 1 on any finding at <level> or above (CRITICAL, HIGH, MEDIUM, LOW, INFO)
   --extended-checks        Also run content-package, legacy-path and service-user checks (see below)
   --security               Enable security surface audit
   --sarif <path.sarif.json> Export forbidden-API findings as SARIF 2.1.0
@@ -128,7 +129,7 @@ A selection; the full list with matched packages/classes is in
 ### Extended Checks (opt-in)
 
 `--extended-checks` (CLI) or `-Ddede.extendedChecks=true` (Maven) adds three checks. Their
-findings appear in the JSON report and count toward `--fail-on-critical` / `failOnCritical`.
+findings appear in the JSON report and count toward `--fail-on` / `failOnSeverity`.
 
 | Source | What it checks | Severity |
 |--------|----------------|----------|
@@ -449,6 +450,10 @@ See [`examples/github-workflow.yml`](examples/github-workflow.yml) for a copy-pa
 
 `--fail-on-critical` exits with code 1 when any CRITICAL forbidden-API finding or
 cloud-readiness issue exists; the JSON report is still written first so it can be uploaded.
+For a stricter gate use `--fail-on HIGH` (or `MEDIUM`, `LOW`, `INFO`): it fails on that
+severity and everything above it. An unknown level exits with code 2 rather than running
+without a gate. Expect HIGH to be noisy on code that still targets AEM 6.5 -- ACS AEM Commons
+has ~160 HIGH findings, almost all the legacy `com.day.cq.workflow` API.
 
 ### Maven Plugin
 
@@ -479,7 +484,8 @@ All parameters are optional:
 | `dependencyCheckReport` | *(none)* | Path to an OWASP Dependency-Check JSON report, for CVE blast-radius ranking |
 | `sarifOutputFile` | `${project.build.directory}/dede-report.sarif.json` | Where to write SARIF findings |
 | `bpaReportFile` | `${project.build.directory}/dede-bpa-report.json` | Where to write the BPA-compatible report |
-| `failOnCritical` | `true` | Fail the build on any CRITICAL finding (forbidden-API or cloud-readiness) |
+| `failOnCritical` | `true` | Enable the severity gate; `false` turns it off whatever `failOnSeverity` says |
+| `failOnSeverity` | `CRITICAL` | Gate threshold: fail on findings at this level or above -- `CRITICAL`, `HIGH`, `MEDIUM`, `LOW`, `INFO` (`-Ddede.failOnSeverity=HIGH`). Same as the CLI's `--fail-on` |
 | `baselineFile` | *(none)* | Enables **ratchet mode** (see below): fail only on forbidden-API violations not already in this baseline |
 | `updateBaseline` | `false` | With `baselineFile`: rewrite it from current findings instead of gating (`-Ddede.updateBaseline=true`) |
 | `multiModuleRoot` | `${maven.multiModuleProjectDirectory}` | Root used to relativize baseline keys -- in a reactor this makes each module's findings distinct against one shared baseline |

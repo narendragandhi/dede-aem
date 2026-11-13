@@ -128,6 +128,31 @@ class DedeCheckMojoTest {
             .doesNotContain("Not critical, excluded");
     }
 
+    @Test
+    void failOnSeverityHighAlsoFailsOnHighFindings() {
+        DedeCheckMojo mojo = new DedeCheckMojo();
+        mojo.setFailOnCritical(true);
+        mojo.setFailOnSeverity("high");
+        CloudReadinessReport report = reportWith(
+            new CloudIssue(Severity.HIGH, Category.DEPRECATED_API, "High issue", "Foo.java", 1),
+            new CloudIssue(Severity.MEDIUM, Category.DEPRECATED_API, "Medium issue", "Bar.java", 2));
+
+        assertThat(mojo.checkCritical(onlyReadiness(report)))
+            .contains("1 HIGH-or-above finding")
+            .contains("HIGH [DEPRECATED_API] High issue")
+            .doesNotContain("Medium issue");
+    }
+
+    @Test
+    void failOnCriticalFalseStillDisablesTheGateWhateverTheThreshold() {
+        DedeCheckMojo mojo = new DedeCheckMojo();
+        mojo.setFailOnCritical(false);
+        mojo.setFailOnSeverity("LOW");
+
+        assertThat(mojo.checkCritical(onlyReadiness(reportWith(
+            new CloudIssue(Severity.CRITICAL, Category.DEPRECATED_API, "x", "Foo.java", 1))))).isNull();
+    }
+
     // --- Sentinel-Twin ratchet gate ---
 
     private static final String LEGACY_KEY = DedeCheckMojo.baselineKey(

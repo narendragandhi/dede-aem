@@ -68,6 +68,7 @@ Run `--help` for the full list (source of truth: `KNOWN_FLAGS` and `printHelp()`
 --json <path>       Findings + graph stats + suggestions as JSON
 --sarif <path>      Forbidden-API findings as SARIF 2.1.0
 --fail-on-critical  Exit 1 on any CRITICAL finding (CI gate)
+--fail-on <level>   Exit 1 on any finding at <level> or above (HIGH, MEDIUM, ...)
 --extended-checks   Add OakPal content-package, legacy-path, service-user checks
 --dot <path.dot>    Export dependency graph to DOT format
 --security          Enable security surface audit

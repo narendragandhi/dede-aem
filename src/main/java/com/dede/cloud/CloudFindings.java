@@ -48,8 +48,33 @@ public record CloudFindings(ForbiddenApiScanner.ScanResult forbiddenApis, CloudR
         return findings;
     }
 
+    /** Severities in descending order; a gate threshold fails on its level and everything above it. */
+    public static final List<String> SEVERITY_ORDER = List.of("CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO");
+
+    /**
+     * Normalizes a user-supplied gate threshold ("high", "HIGH") or throws with the accepted
+     * values, so a typo fails loudly instead of silently disabling the gate.
+     */
+    public static String parseThreshold(String value) {
+        String normalized = value == null ? "" : value.trim().toUpperCase(java.util.Locale.ROOT);
+        if (!SEVERITY_ORDER.contains(normalized)) {
+            throw new IllegalArgumentException("Unknown severity '" + value + "'; expected one of "
+                + String.join(", ", SEVERITY_ORDER));
+        }
+        return normalized;
+    }
+
+    /** Findings at {@code threshold} or more severe. Unknown finding severities never match. */
+    public List<Finding> atOrAbove(String threshold) {
+        int limit = SEVERITY_ORDER.indexOf(parseThreshold(threshold));
+        return all().stream().filter(f -> {
+            int rank = SEVERITY_ORDER.indexOf(f.severity());
+            return rank >= 0 && rank <= limit;
+        }).toList();
+    }
+
     public List<Finding> critical() {
-        return all().stream().filter(f -> "CRITICAL".equals(f.severity())).toList();
+        return atOrAbove("CRITICAL");
     }
 
     public int criticalCount() {
@@ -68,13 +93,25 @@ public record CloudFindings(ForbiddenApiScanner.ScanResult forbiddenApis, CloudR
      * Shared by the CLI's --fail-on-critical and the Maven plugin's failOnCritical.
      */
     public String criticalFailureMessage() {
-        List<Finding> critical = critical();
-        if (critical.isEmpty()) {
+        return failureMessage("CRITICAL");
+    }
+
+    /**
+     * Gate failure message listing every finding at {@code threshold} or above, or null when
+     * there are none. Shared by the CLI's --fail-on and the Maven plugin's failOnSeverity.
+     */
+    public String failureMessage(String threshold) {
+        String level = parseThreshold(threshold);
+        List<Finding> failing = atOrAbove(level);
+        if (failing.isEmpty()) {
             return null;
         }
-        StringBuilder message = new StringBuilder(critical.size() + " CRITICAL finding(s):\n");
-        for (Finding f : critical) {
-            message.append("  - [").append(f.category()).append("] ").append(f.message());
+        String label = "CRITICAL".equals(level) ? "CRITICAL" : level + "-or-above";
+        StringBuilder message = new StringBuilder(failing.size() + " " + label + " finding(s):\n");
+        for (Finding f : failing) {
+            message.append("  - ");
+            if (!"CRITICAL".equals(level)) message.append(f.severity()).append(' ');
+            message.append('[').append(f.category()).append("] ").append(f.message());
             if (f.file() != null) {
                 message.append(" (").append(f.file());
                 if (f.line() > 0) message.append(':').append(f.line());

@@ -78,7 +78,7 @@ public class DedeApplication {
             boolean cloudReadiness = false;
             boolean watchMode = false;
             String jsonOutputPath = null;
-            boolean failOnCritical = false;
+            String failOn = null;  // gate threshold; null = no gate
             boolean extendedChecks = false;
 
             for (int i = 1; i < args.length; i++) {
@@ -88,8 +88,17 @@ public class DedeApplication {
                 if ("--json".equals(args[i]) && i + 1 < args.length) {
                     jsonOutputPath = args[i + 1];
                 }
-                if ("--fail-on-critical".equals(args[i])) {
-                    failOnCritical = true;
+                if ("--fail-on-critical".equals(args[i]) && failOn == null) {
+                    failOn = "CRITICAL";
+                }
+                if ("--fail-on".equals(args[i])) {
+                    try {
+                        failOn = CloudFindings.parseThreshold(i + 1 < args.length ? args[i + 1] : null);
+                    } catch (IllegalArgumentException e) {
+                        // A mistyped gate must not run as "no gate".
+                        log.error("--fail-on: {}", e.getMessage());
+                        System.exit(SpringApplication.exit(context, () -> 2));
+                    }
                 }
                 if ("--extended-checks".equals(args[i])) {
                     extendedChecks = true;
@@ -218,9 +227,9 @@ public class DedeApplication {
             }
 
             // One set of findings (catalog scan + graph checks), shared by the SARIF export, the
-            // JSON report and --fail-on-critical -- the same set the Maven plugin gates on.
+            // JSON report and --fail-on / --fail-on-critical -- the same set the Maven plugin gates on.
             Path scanRoot = Path.of(projectPath);
-            boolean needFindings = sarifOutputPath != null || jsonOutputPath != null || failOnCritical;
+            boolean needFindings = sarifOutputPath != null || jsonOutputPath != null || failOn != null;
             CloudFindings findings = needFindings ? cloudFindings.collect(scanRoot, extendedChecks) : null;
 
             // SARIF Report (for GitHub Code Scanning, VS Code Problems panel, SIEMs)
@@ -270,9 +279,9 @@ public class DedeApplication {
             }
 
             int exitCode = 0;
-            String criticalFailure = failOnCritical ? findings.criticalFailureMessage() : null;
-            if (criticalFailure != null) {
-                log.error("Failing (--fail-on-critical): {}", criticalFailure);
+            String gateFailure = failOn != null ? findings.failureMessage(failOn) : null;
+            if (gateFailure != null) {
+                log.error("Failing (--fail-on {}): {}", failOn, gateFailure);
                 exitCode = 1;
             }
 
@@ -288,7 +297,7 @@ public class DedeApplication {
     private static final Set<String> KNOWN_FLAGS = Set.of(
         "--help", "-h", "--rules", "--dot", "--analyze", "--security", "--profiles", "--snapshot",
         "--compare", "--bpa-report", "--sarif", "--suggestions", "--dependency-check-report",
-        "--cloud-readiness", "--watch", "--json", "--fail-on-critical", "--extended-checks");
+        "--cloud-readiness", "--watch", "--json", "--fail-on-critical", "--fail-on", "--extended-checks");
 
     private static Map<String, Object> buildJsonReport(String projectPath, GraphService graphService,
                                                        CloudFindings findings, List<String> suggestions) {
@@ -339,6 +348,7 @@ public class DedeApplication {
         log.info("  --suggestions <path.json> Export refactoring suggestions as JSON");
         log.info("  --json <path.json>  Export findings (forbidden-API + cloud-readiness), graph stats and suggestions as JSON");
         log.info("  --fail-on-critical  Exit with code 1 if any CRITICAL finding exists (CI gate)");
+        log.info("  --fail-on <level>   Exit with code 1 on any finding at <level> or above: CRITICAL, HIGH, MEDIUM, LOW, INFO");
         log.info("  --extended-checks   Also run content-package (OakPal; needs 'mvn package' first), legacy-path and service-user checks");
         log.info("Skipped by default: .git, node_modules, it.tests, ui.tests, Maven target/ and src/test/");
         log.info("  --watch             Start watching for file changes and update incrementally");

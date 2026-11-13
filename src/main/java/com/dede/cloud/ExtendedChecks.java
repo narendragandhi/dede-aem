@@ -133,8 +133,8 @@ public class ExtendedChecks {
                 + "or parent nodes that are not available to offline validation.", skippedOfflineNoise);
         }
         if (report.results().isEmpty()) {
-            log.info("Extended checks: no built content packages found under target/ -- run 'mvn package' "
-                + "first to include OakPal content-package validation.");
+            log.warn("Extended checks: NO content packages were validated -- none found under target/. "
+                + "Run 'mvn package' before the scan, or the content-package check passes without checking anything.");
         }
         return findings;
     }

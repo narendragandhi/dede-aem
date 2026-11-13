@@ -1,6 +1,5 @@
 package com.dede.cloud;
 
-import com.dede.intelligence.CloudReadinessAnalyzer;
 import com.dede.intelligence.CloudReadinessAnalyzer.CloudIssue;
 import com.dede.intelligence.CloudReadinessAnalyzer.CloudReadinessReport;
 
@@ -54,11 +53,8 @@ public record CloudFindings(ForbiddenApiScanner.ScanResult forbiddenApis, CloudR
     }
 
     public int criticalCount() {
-        return forbiddenApis.getCriticalCount()
-            + (int) readiness.getIssues().stream()
-                .filter(i -> i.getSeverity() == CloudReadinessAnalyzer.Severity.CRITICAL)
-                .count()
-            + (int) extended.stream().filter(f -> "CRITICAL".equals(f.severity())).count();
+        // Derived from critical() so the count and the failure message can never disagree.
+        return critical().size();
     }
 
     public Map<String, Long> countBySeverity() {

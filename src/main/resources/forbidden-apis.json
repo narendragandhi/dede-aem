@@ -27,22 +27,19 @@
     },
     {
       "name": "DEPRECATED_REPLICATION",
-      "description": "Deprecated replication APIs",
+      "description": "Replication agent and queue APIs (agents are managed by Adobe on AEM as a Cloud Service; the Replicator API itself remains supported)",
       "severity": "HIGH",
       "classes": [
-        "com.day.cq.replication.ReplicationActionType",
-        "com.day.cq.replication.ReplicationException",
-        "com.day.cq.replication.ReplicationOptions",
-        "com.day.cq.replication.ReplicationQueue",
-        "com.day.cq.replication.ReplicationResult",
-        "com.day.cq.replication.ReplicationStatus",
-        "com.day.cq.replication.Replicator"
+        "com.day.cq.replication.Agent",
+        "com.day.cq.replication.AgentManager",
+        "com.day.cq.replication.AgentConfig",
+        "com.day.cq.replication.ReplicationQueue"
       ],
-      "replacement": "Use Sling Content Distribution API (org.apache.sling.distribution)"
+      "replacement": "Publish through com.day.cq.replication.Replicator or Sling Content Distribution instead of addressing agents or queues directly"
     },
     {
       "name": "DEPRECATED_WORKFLOW",
-      "description": "Deprecated workflow APIs - use Sling Jobs instead",
+      "description": "Legacy com.day.cq.workflow API, superseded by the Granite Workflow API",
       "severity": "HIGH",
       "classes": [
         "com.day.cq.workflow.WorkflowSession",
@@ -54,7 +51,7 @@
       "packages": [
         "com.day.cq.workflow"
       ],
-      "replacement": "Use org.apache.sling.event.jobs.JobManager for background processing"
+      "replacement": "Use com.adobe.granite.workflow (WorkflowSession, WorkflowProcess, WorkItem, MetaDataMap)"
     },
     {
       "name": "ADMIN_SESSION",
@@ -65,29 +62,15 @@
         "getAdministrativeResourceResolver",
         "impersonateUsingAdministrator"
       ],
-      "classes": [
-        "org.apache.sling.jcr.api.SlingRepository"
-      ],
       "replacement": "Use service users with ServiceUserMapped interface",
       "cweId": "CWE-250",
       "cweName": "Execution with Unnecessary Privileges"
-    },
-    {
-      "name": "DEPRECATED_QUERY",
-      "description": "Deprecated query methods",
-      "severity": "MEDIUM",
-      "methods": [
-        "findResources",
-        "queryResources"
-      ],
-      "replacement": "Use QueryBuilder API or Oak index-based queries"
     },
     {
       "name": "CLASSIC_UI",
       "description": "Classic UI components and widgets (deprecated)",
       "severity": "MEDIUM",
       "packages": [
-        "com.day.cq.wcm.commons.WCMUtils",
         "com.day.cq.wcm.core.components.internal.contentfragment"
       ],
       "classes": [
@@ -97,40 +80,15 @@
     },
     {
       "name": "DEPRECATED_DAM",
-      "description": "Deprecated DAM APIs",
+      "description": "Custom DAM asset handlers (in-JVM rendition processing is replaced by Asset Compute)",
       "severity": "HIGH",
+      "detection": "usage",
       "classes": [
-        "com.day.cq.dam.api.AssetManager",
         "com.day.cq.dam.api.handler.AssetHandler",
+        "com.day.cq.dam.commons.handler.AbstractAssetHandler",
         "com.day.cq.dam.core.impl.handler.StandardImageHandler"
       ],
-      "methods": [
-        "createAsset",
-        "getRendition"
-      ],
       "replacement": "Use Asset Compute microservices for rendition processing"
-    },
-    {
-      "name": "DEPRECATED_TAGGING",
-      "description": "Deprecated tagging APIs",
-      "severity": "MEDIUM",
-      "classes": [
-        "com.day.cq.tagging.TagManager",
-        "com.day.cq.tagging.Tag"
-      ],
-      "replacement": "Use cq:tags property directly or new Tagging API"
-    },
-    {
-      "name": "SCHEDULER_DIRECT",
-      "description": "Direct scheduler usage without distributed coordination",
-      "severity": "HIGH",
-      "classes": [
-        "org.apache.sling.commons.scheduler.Scheduler"
-      ],
-      "annotations": [
-        "org.apache.sling.commons.scheduler.Scheduler"
-      ],
-      "replacement": "Use Sling Jobs with proper distributed locking for cluster-safe scheduling"
     },
     {
       "name": "DEPRECATED_AUTH",
@@ -157,15 +115,6 @@
       "replacement": "AEM Communities is deprecated - use third-party solutions"
     },
     {
-      "name": "DEPRECATED_SCENE7",
-      "description": "Deprecated Scene7/Dynamic Media Classic APIs",
-      "severity": "HIGH",
-      "packages": [
-        "com.day.cq.dam.scene7"
-      ],
-      "replacement": "Use Dynamic Media with OpenAPI delivery"
-    },
-    {
       "name": "LOCAL_BINARY_STORAGE",
       "description": "Direct binary storage access (not compatible with cloud storage)",
       "severity": "CRITICAL",
@@ -180,10 +129,9 @@
     },
     {
       "name": "SERVLET_DEPRECATED",
-      "description": "Deprecated servlet patterns",
+      "description": "Deprecated servlet base classes",
       "severity": "MEDIUM",
       "classes": [
-        "org.apache.sling.api.servlets.SlingAllMethodsServlet",
         "com.day.cq.commons.servlets.AbstractPredicateServlet"
       ],
       "replacement": "Use Sling Model Exporter or specific HTTP method servlets"
@@ -200,9 +148,10 @@
     },
     {
       "name": "THREAD_UNSAFE_FIELDS",
-      "description": "Non-thread-safe objects stored as class fields",
+      "description": "Non-thread-safe objects stored as fields of a singleton (OSGi component or servlet)",
       "severity": "CRITICAL",
       "ruleId": "AEM-3",
+      "detection": "usage",
       "classes": [
         "org.apache.sling.api.resource.ResourceResolver",
         "javax.jcr.Session",
@@ -213,9 +162,10 @@
     },
     {
       "name": "UNCLOSED_RESOURCE_RESOLVER",
-      "description": "ResourceResolver not closed properly",
+      "description": "ResourceResolver opened from a ResourceResolverFactory but never closed",
       "severity": "HIGH",
       "ruleId": "CQRules:CQBP-72",
+      "detection": "usage",
       "classes": [
         "org.apache.sling.api.resource.ResourceResolver"
       ],
@@ -226,6 +176,7 @@
       "description": "HTTP requests without timeout configuration",
       "severity": "CRITICAL",
       "ruleId": "CQRules:ConnectionTimeoutMechanism",
+      "detection": "usage",
       "classes": [
         "org.apache.http.client.HttpClient",
         "java.net.HttpURLConnection"
@@ -304,6 +255,7 @@
       "description": "HTTPClient instances created per-method instead of reused",
       "severity": "MEDIUM",
       "ruleId": "AEMSRE-870",
+      "detection": "usage",
       "classes": [
         "org.apache.http.impl.client.HttpClients",
         "org.apache.http.impl.client.CloseableHttpClient"
@@ -1025,11 +977,6 @@
       "pid": "com.day.cq.wcm.msm.impl.LiveRelationshipManagerImpl",
       "severity": "MINOR",
       "description": "MSM configuration should use context-aware config"
-    },
-    {
-      "pid": "org.apache.sling.commons.log.LogManager.factory.config",
-      "severity": "MINOR",
-      "description": "Logging is managed via Cloud Manager - use environment-specific configs"
     },
     {
       "pid": "com.day.cq.mailer.DefaultMailService",

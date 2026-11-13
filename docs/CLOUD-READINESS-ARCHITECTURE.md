@@ -172,9 +172,9 @@ The `forbidden-apis.json` file is the single source of truth:
 |----------|----------|---------|-------------|
 | INTERNAL_API | CRITICAL | `com.day.cq.*.impl` | Public API interfaces |
 | ADMIN_SESSION | CRITICAL | `loginAdministrative()` | Service users |
-| DEPRECATED_REPLICATION | HIGH | `Replicator` | Sling Content Distribution |
-| DEPRECATED_WORKFLOW | HIGH | `WorkflowSession` | Sling Jobs |
-| DEPRECATED_DAM | HIGH | `AssetManager.createAsset()` | Asset Compute |
+| DEPRECATED_REPLICATION | HIGH | `AgentManager`, `ReplicationQueue` | `Replicator` API or Sling Content Distribution |
+| DEPRECATED_WORKFLOW | HIGH | `com.day.cq.workflow.WorkflowSession` | `com.adobe.granite.workflow` |
+| DEPRECATED_DAM | HIGH | `class X extends AbstractAssetHandler` | Asset Compute |
 | LOCAL_BINARY_STORAGE | CRITICAL | `getDataStore()` | Standard JCR Binary API |
 
 ## OSGi Configuration Validation

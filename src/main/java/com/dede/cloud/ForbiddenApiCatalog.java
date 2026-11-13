@@ -123,7 +123,10 @@ public class ForbiddenApiCatalog {
                     String regex = packagePattern
                         .replace(".", "\\.")
                         .replace("*", ".*");
-                    packagePatterns.put(packagePattern, Pattern.compile("^" + regex));
+                    // Match the package itself (wildcard imports) and any class or subpackage
+                    // in it. checkClass() uses matches(), so without the suffix a pattern
+                    // like com.day.cq.*.impl never matched com.day.cq.wcm.core.impl.PageImpl.
+                    packagePatterns.put(packagePattern, Pattern.compile("^" + regex + "(\\..+)?$"));
                 }
             }
 
@@ -151,9 +154,11 @@ public class ForbiddenApiCatalog {
 
         String cweId   = node.has("cweId")   ? node.get("cweId").asText(null)   : null;
         String cweName = node.has("cweName") ? node.get("cweName").asText(null) : null;
+        boolean usageDetection = node.has("detection") && "usage".equals(node.get("detection").asText());
+        String ruleId = node.has("ruleId") ? node.get("ruleId").asText(null) : null;
 
         return new ForbiddenCategory(name, description, severity, replacement,
-            packages, classes, methods, annotations, requiresClassContext, cweId, cweName);
+            packages, classes, methods, annotations, requiresClassContext, cweId, cweName, usageDetection, ruleId);
     }
 
     private List<String> parseStringArray(JsonNode arrayNode) {
@@ -173,6 +178,9 @@ public class ForbiddenApiCatalog {
      */
     public Optional<ForbiddenMatch> checkClass(String fullyQualifiedClassName) {
         for (ForbiddenCategory category : categories) {
+            // Usage rules list the classes they inspect, not classes that are forbidden to import.
+            if (category.usageDetection()) continue;
+
             // Check exact class match
             if (category.classes().contains(fullyQualifiedClassName)) {
                 return Optional.of(new ForbiddenMatch(
@@ -205,7 +213,8 @@ public class ForbiddenApiCatalog {
     public Optional<ForbiddenMatch> checkMethod(String methodName) {
         for (ForbiddenCategory category : categories) {
             // Skip rules that require a specific caller class — use checkClassScopedMethod() for those
-            if (category.methods().contains(methodName) && !category.requiresClassContext()) {
+            if (category.methods().contains(methodName) && !category.requiresClassContext()
+                    && !category.usageDetection()) {
                 return Optional.of(new ForbiddenMatch(
                     category.name(), category.severity(), category.description(),
                     category.replacement(), MatchType.METHOD,
@@ -279,8 +288,10 @@ public class ForbiddenApiCatalog {
      * Checks if a JCR path is a legacy path that needs migration.
      */
     public Optional<LegacyPath> checkPath(String jcrPath) {
+        // Match the path or anything below it, on a segment boundary: /etc/dam must not
+        // match /etc/damage, nor /libs match /libsx.
         return legacyPaths.stream()
-            .filter(lp -> jcrPath.startsWith(lp.path()))
+            .filter(lp -> jcrPath.equals(lp.path()) || jcrPath.startsWith(lp.path() + "/"))
             .findFirst();
     }
 
@@ -394,13 +405,23 @@ public class ForbiddenApiCatalog {
         List<String> annotations,
         boolean requiresClassContext,
         String cweId,      // e.g. "CWE-78", null if not mapped
-        String cweName
+        String cweName,
+        // "detection": "usage" -- matched by a dedicated detector in ForbiddenApiScanner
+        // (fields, unclosed resolvers, client construction), never by import alone.
+        boolean usageDetection,
+        // Cloud Manager / AEM rule id, e.g. "AEM-3" or "CQRules:CQBP-72"; null if not mapped
+        String ruleId
     ) {
         public String cweUrl() {
             if (cweId == null) return null;
             String id = cweId.replace("CWE-", "");
             return "https://cwe.mitre.org/data/definitions/" + id + ".html";
         }
+    }
+
+    /** Looks up a category by name, e.g. for usage detectors that report under it. */
+    public Optional<ForbiddenCategory> getCategory(String name) {
+        return categories.stream().filter(c -> c.name().equals(name)).findFirst();
     }
 
     public record ForbiddenMatch(

@@ -26,7 +26,6 @@ import java.util.regex.Pattern;
  *
  * Also detects:
  * - Service user mappings with admin user
- * - Missing run mode specificity
  * - Duplicate PID configurations
  * - Sensitive values that should use Cloud Manager secrets
  */
@@ -119,11 +118,12 @@ public class OsgiConfigCheck implements ProgressCheck {
                 ));
             }
 
-            // Check cloud-managed PIDs
-            Optional<ForbiddenApiCatalog.CloudManagedOsgiPid> cloudManagedPid = catalog.checkCloudManagedPid(pid);
-            if (cloudManagedPid.isEmpty() && factoryPid != null) {
-                cloudManagedPid = catalog.checkCloudManagedPid(factoryPid);
-            }
+            // Check cloud-managed PIDs. Only the singleton configuration is cloud-managed: a
+            // factory instance (RepositoryInitializer~myproject, ServiceUserMapperImpl.amended~x)
+            // adds configuration, which is exactly how Adobe says to customize these on Cloud.
+            Optional<ForbiddenApiCatalog.CloudManagedOsgiPid> cloudManagedPid = factoryPid == null
+                ? catalog.checkCloudManagedPid(pid)
+                : Optional.empty();
             if (cloudManagedPid.isPresent()) {
                 ForbiddenApiCatalog.CloudManagedOsgiPid cp = cloudManagedPid.get();
                 violations.add(new SimpleViolation(
@@ -142,9 +142,6 @@ public class OsgiConfigCheck implements ProgressCheck {
 
         // Check for sensitive values
         checkSensitiveProperties(packageId, path, node);
-
-        // Check for run mode specificity
-        checkRunModeSpecificity(packageId, path);
     }
 
     private String extractPid(String configFileName) {
@@ -249,18 +246,6 @@ public class OsgiConfigCheck implements ProgressCheck {
                     break;
                 }
             }
-        }
-    }
-
-    private void checkRunModeSpecificity(PackageId packageId, String path) {
-        // Check if config is in generic /config/ without run mode
-        if (path.matches(".*/config/[^/]+$") && !path.contains("/config.")) {
-            violations.add(new SimpleViolation(
-                Severity.MINOR,
-                String.format("OSGi config without run mode specificity: %s. " +
-                    "Consider using config.author, config.publish, or config.prod folders.", path),
-                packageId
-            ));
         }
     }
 

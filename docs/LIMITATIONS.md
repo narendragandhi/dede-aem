@@ -106,15 +106,20 @@ If you encounter false positives:
 
 ## Suppressing Warnings
 
-To suppress specific warnings, add comments in your code:
+Usage-pattern findings (`THREAD_UNSAFE_FIELDS`, `UNCLOSED_RESOURCE_RESOLVER`, `HTTP_CLIENT_TIMEOUT`,
+`HTTP_CLIENT_REUSE`, `DEPRECATED_DAM`) honor `@SuppressWarnings` on the flagged element or any
+enclosing declaration, using the rule id or category name:
 ```java
-// dede-ignore: CST-5
-someDeprecatedApiCall();
+@SuppressWarnings("AEM Rules:AEM-3") // long-lived session used for observation
+private Session session;
 ```
 
-Or exclude files via CLI:
+Import-based findings cannot be suppressed in code yet; a `// dede-ignore` comment is planned.
+
+Build output, `src/test/`, `it.tests`/`ui.tests`, `node_modules` and `.git` are already
+skipped by default (see `ScanExclusions`). Custom exclusions via CLI are planned:
 ```bash
 java -jar dede.jar /project --exclude "**/test/**"
 ```
 
-(Note: These features are planned but not yet implemented)
+(Note: `--exclude` and `// dede-ignore` are planned but not yet implemented)

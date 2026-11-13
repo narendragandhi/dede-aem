@@ -8,8 +8,8 @@ import com.dede.discovery.OsgiLinker;
 import com.dede.discovery.ProjectScanner;
 import com.dede.discovery.SourceParser;
 import com.dede.domain.GraphService;
-import com.dede.intelligence.CloudReadinessAnalyzer;
-import com.dede.intelligence.CloudReadinessAnalyzer.CloudIssue;
+import com.dede.cloud.CloudFindings;
+import com.dede.cloud.CloudFindingsService;
 import com.dede.intelligence.CloudReadinessAnalyzer.CloudReadinessReport;
 import com.dede.intelligence.VulnerabilityService;
 import com.dede.knowledge.GovernanceEngine;
@@ -34,6 +34,7 @@ import java.io.IOException;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
 
@@ -73,6 +74,14 @@ public class DedeCheckMojo extends AbstractMojo {
 
     @Parameter(defaultValue = "true")
     private boolean failOnCritical;
+
+    /**
+     * Also run the extended checks: OakPal validation of built content packages (bind to a
+     * phase after package, e.g. the default verify), legacy-path deployment and service-user
+     * mapping checks. Their CRITICAL findings count toward failOnCritical.
+     */
+    @Parameter(property = "dede.extendedChecks", defaultValue = "false")
+    private boolean extendedChecks;
 
     /**
      * Enables ratchet mode (the Sentinel-Twin gate): when set, the build fails only on
@@ -133,9 +142,8 @@ public class DedeCheckMojo extends AbstractMojo {
         GraphService graphService = context.getBean(GraphService.class);
         GovernanceEngine governance = context.getBean(GovernanceEngine.class);
         VulnerabilityService securityService = context.getBean(VulnerabilityService.class);
-        CloudReadinessAnalyzer cloudAnalyzer = context.getBean(CloudReadinessAnalyzer.class);
+        CloudFindingsService cloudFindings = context.getBean(CloudFindingsService.class);
         BpaReportGenerator bpaGenerator = context.getBean(BpaReportGenerator.class);
-        ForbiddenApiScanner forbiddenApiScanner = context.getBean(ForbiddenApiScanner.class);
         DependencyCveImporter cveImporter = context.getBean(DependencyCveImporter.class);
 
         sourceParser.loadProfiles(profiles.split(","));
@@ -161,29 +169,24 @@ public class DedeCheckMojo extends AbstractMojo {
         getLog().info("Dede: scanned " + graphService.getNodeCount() + " nodes, "
             + graphService.getEdgeCount() + " edges");
 
-        CloudReadinessReport cloudReport = cloudAnalyzer.analyze();
-        long critical = cloudReport.getIssues().stream()
-            .filter(i -> i.getSeverity() == CloudReadinessAnalyzer.Severity.CRITICAL)
-            .count();
-        long high = cloudReport.getIssues().stream()
-            .filter(i -> i.getSeverity() == CloudReadinessAnalyzer.Severity.HIGH)
-            .count();
-        getLog().info("Dede: cloud readiness score " + cloudReport.getScore()
-            + "% (" + critical + " CRITICAL, " + high + " HIGH)");
-
-        // Scanned once here so the SARIF export and the ratchet gate see exactly the
-        // same findings -- and so a scan failure now fails the build instead of being
-        // swallowed by the report writer's warn-and-continue handling.
-        ScanResult scanResult = forbiddenApiScanner.scanProject(Path.of(projectPathStr));
-        getLog().info("Dede: " + scanResult.getTotalViolations() + " forbidden-API finding(s)");
+        // Collected once, through the same service the CLI's --fail-on-critical uses, so the
+        // critical gate, SARIF export and ratchet all see exactly the same findings -- and a
+        // scan failure fails the build instead of being swallowed by a report writer.
+        CloudFindings findings = cloudFindings.collect(Path.of(projectPathStr), extendedChecks);
+        CloudReadinessReport cloudReport = findings.readiness();
+        ScanResult scanResult = findings.forbiddenApis();
+        Map<String, Long> bySeverity = findings.countBySeverity();
+        getLog().info("Dede: cloud readiness score " + cloudReport.getScore() + "%, "
+            + findings.all().size() + " finding(s) (" + bySeverity.getOrDefault("CRITICAL", 0L) + " CRITICAL, "
+            + bySeverity.getOrDefault("HIGH", 0L) + " HIGH)");
 
         writeBpaReport(cloudReport, bpaGenerator);
         writeSarifReport(scanResult);
 
         // Both gates always evaluate; one combined failure reports everything found,
-        // instead of fail-fast hiding ratchet findings behind CRITICAL cloud issues.
+        // instead of fail-fast hiding ratchet findings behind CRITICAL findings.
         List<String> gateFailures = new java.util.ArrayList<>();
-        String criticalFailure = checkCritical(cloudReport);
+        String criticalFailure = checkCritical(findings);
         if (criticalFailure != null) {
             gateFailures.add(criticalFailure);
         }
@@ -197,24 +200,12 @@ public class DedeCheckMojo extends AbstractMojo {
     }
 
     /**
-     * Returns the failure message for CRITICAL cloud-readiness issues, or null when the
-     * gate passes. Extracted from runAnalysis() so it's directly unit-testable against a
-     * hand-built CloudReadinessReport, independent of the full scan pipeline and Spring
-     * bootstrap -- see DedeCheckMojoTest.
+     * Returns the failure message for CRITICAL findings -- forbidden-API catalog and graph
+     * readiness checks alike, the same set the CLI's --fail-on-critical gates on -- or null
+     * when the gate passes. Unit-testable against hand-built CloudFindings; see DedeCheckMojoTest.
      */
-    String checkCritical(CloudReadinessReport cloudReport) {
-        if (!failOnCritical) {
-            return null;
-        }
-        List<CloudIssue> criticalIssues = cloudReport.getIssues().stream()
-            .filter(i -> i.getSeverity() == CloudReadinessAnalyzer.Severity.CRITICAL)
-            .toList();
-        if (criticalIssues.isEmpty()) {
-            return null;
-        }
-        StringBuilder message = new StringBuilder(criticalIssues.size() + " CRITICAL cloud-readiness issue(s) found:\n");
-        criticalIssues.forEach(i -> message.append("  - ").append(i.getMessage()).append('\n'));
-        return message.toString();
+    String checkCritical(CloudFindings findings) {
+        return failOnCritical ? findings.criticalFailureMessage() : null;
     }
 
     /** Test-only: production code sets this via the Mojo's @Parameter injection. */

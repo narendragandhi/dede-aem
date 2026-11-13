@@ -10,7 +10,8 @@ import com.dede.intelligence.VulnerabilityService;
 import com.dede.intelligence.GraphAgentSkills;
 import com.dede.intelligence.CloudReadinessAnalyzer;
 import com.dede.cloud.BpaReportGenerator;
-import com.dede.cloud.ForbiddenApiScanner;
+import com.dede.cloud.CloudFindings;
+import com.dede.cloud.CloudFindingsService;
 import com.dede.cloud.SarifReport;
 import com.dede.security.DependencyCveImporter;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -26,7 +27,10 @@ import org.springframework.context.annotation.Bean;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Path;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 @SpringBootApplication
 public class DedeApplication {
@@ -44,7 +48,7 @@ public class DedeApplication {
                                              VulnerabilityService security, GraphAgentSkills agent,
                                              OsgiLinker osgiLinker, DeltaAnalyzer deltaAnalyzer,
                                              CloudReadinessAnalyzer cloudAnalyzer, BpaReportGenerator bpaGenerator,
-                                             ForbiddenApiScanner forbiddenApiScanner,
+                                             CloudFindingsService cloudFindings,
                                              DependencyCveImporter cveImporter,
                                              ConfigurableApplicationContext context) {
         return args -> {
@@ -73,8 +77,23 @@ public class DedeApplication {
             String dependencyCheckReportPath = null;
             boolean cloudReadiness = false;
             boolean watchMode = false;
+            String jsonOutputPath = null;
+            boolean failOnCritical = false;
+            boolean extendedChecks = false;
 
-            for (int i = 0; i < args.length; i++) {
+            for (int i = 1; i < args.length; i++) {
+                if (args[i].startsWith("--") && !KNOWN_FLAGS.contains(args[i])) {
+                    log.warn("Unknown option '{}' ignored. Run with --help for the supported options.", args[i]);
+                }
+                if ("--json".equals(args[i]) && i + 1 < args.length) {
+                    jsonOutputPath = args[i + 1];
+                }
+                if ("--fail-on-critical".equals(args[i])) {
+                    failOnCritical = true;
+                }
+                if ("--extended-checks".equals(args[i])) {
+                    extendedChecks = true;
+                }
                 if ("--rules".equals(args[i]) && i + 1 < args.length) {
                     rulesPath = args[i + 1];
                 }
@@ -198,12 +217,16 @@ public class DedeApplication {
                 log.info("BPA report saved to: {}", bpaReportPath);
             }
 
+            // One set of findings (catalog scan + graph checks), shared by the SARIF export, the
+            // JSON report and --fail-on-critical -- the same set the Maven plugin gates on.
+            Path scanRoot = Path.of(projectPath);
+            boolean needFindings = sarifOutputPath != null || jsonOutputPath != null || failOnCritical;
+            CloudFindings findings = needFindings ? cloudFindings.collect(scanRoot, extendedChecks) : null;
+
             // SARIF Report (for GitHub Code Scanning, VS Code Problems panel, SIEMs)
             if (sarifOutputPath != null) {
                 log.info("Generating SARIF report: {}", sarifOutputPath);
-                Path scanRoot = Path.of(projectPath);
-                ForbiddenApiScanner.ScanResult scanResult = forbiddenApiScanner.scanProject(scanRoot);
-                SarifReport sarif = new SarifReport(scanResult.violations(), scanRoot);
+                SarifReport sarif = new SarifReport(findings.forbiddenApis().violations(), scanRoot);
 
                 ObjectMapper mapper = new ObjectMapper().enable(SerializationFeature.INDENT_OUTPUT);
                 try {
@@ -233,12 +256,55 @@ public class DedeApplication {
                 }
             }
 
+            if (jsonOutputPath != null) {
+                log.info("Writing JSON report: {}", jsonOutputPath);
+                Map<String, Object> report = buildJsonReport(projectPath, graphService, findings, suggestions);
+                ObjectMapper mapper = new ObjectMapper().enable(SerializationFeature.INDENT_OUTPUT);
+                try {
+                    mapper.writeValue(new File(jsonOutputPath), report);
+                } catch (IOException e) {
+                    // A CI gate reading this file must not silently see "no findings".
+                    log.error("Failed to write JSON report to {}: {}", jsonOutputPath, e.getMessage());
+                    System.exit(SpringApplication.exit(context, () -> 2));
+                }
+            }
+
+            int exitCode = 0;
+            String criticalFailure = failOnCritical ? findings.criticalFailureMessage() : null;
+            if (criticalFailure != null) {
+                log.error("Failing (--fail-on-critical): {}", criticalFailure);
+                exitCode = 1;
+            }
+
             if (watchMode) {
                 scanner.startWatching(projectPath);
             } else {
-                System.exit(SpringApplication.exit(context, () -> 0));
+                final int code = exitCode;
+                System.exit(SpringApplication.exit(context, () -> code));
             }
         };
+    }
+
+    private static final Set<String> KNOWN_FLAGS = Set.of(
+        "--help", "-h", "--rules", "--dot", "--analyze", "--security", "--profiles", "--snapshot",
+        "--compare", "--bpa-report", "--sarif", "--suggestions", "--dependency-check-report",
+        "--cloud-readiness", "--watch", "--json", "--fail-on-critical", "--extended-checks");
+
+    private static Map<String, Object> buildJsonReport(String projectPath, GraphService graphService,
+                                                       CloudFindings findings, List<String> suggestions) {
+        Map<String, Object> graph = new LinkedHashMap<>();
+        graph.put("nodes", graphService.getNodeCount());
+        graph.put("edges", graphService.getEdgeCount());
+
+        Map<String, Object> report = new LinkedHashMap<>();
+        report.put("tool", "dede");
+        report.put("version", VERSION);
+        report.put("project", projectPath);
+        report.put("summary", findings.summary());
+        report.put("graph", graph);
+        report.put("violations", findings.all());
+        report.put("suggestions", suggestions);
+        return report;
     }
 
     private void printBanner() {
@@ -271,6 +337,10 @@ public class DedeApplication {
         log.info("  --bpa-report <path> Generate BPA-compatible report (.json or .html)");
         log.info("  --sarif <path.sarif.json> Export forbidden-API findings as SARIF 2.1.0");
         log.info("  --suggestions <path.json> Export refactoring suggestions as JSON");
+        log.info("  --json <path.json>  Export findings (forbidden-API + cloud-readiness), graph stats and suggestions as JSON");
+        log.info("  --fail-on-critical  Exit with code 1 if any CRITICAL finding exists (CI gate)");
+        log.info("  --extended-checks   Also run content-package (OakPal; needs 'mvn package' first), legacy-path and service-user checks");
+        log.info("Skipped by default: .git, node_modules, it.tests, ui.tests, Maven target/ and src/test/");
         log.info("  --watch             Start watching for file changes and update incrementally");
         log.info("");
         log.info("Web UI:      http://localhost:8080/");

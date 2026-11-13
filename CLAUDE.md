@@ -69,12 +69,16 @@ Run `--help` for the full list (source of truth: `KNOWN_FLAGS` and `printHelp()`
 --sarif <path>      Forbidden-API findings as SARIF 2.1.0
 --fail-on-critical  Exit 1 on any CRITICAL finding (CI gate)
 --fail-on <level>   Exit 1 on any finding at <level> or above (HIGH, MEDIUM, ...)
+--runtime-traces <f>  Join OpenTelemetry traces (OTLP JSON) to the graph
+--emit-otel-config <f> Write an OTel Java agent config from the graph
 --extended-checks   Add OakPal content-package, legacy-path, service-user checks
 --dot <path.dot>    Export dependency graph to DOT format
 --security          Enable security surface audit
 --snapshot <dir>    Save graph snapshot
 --compare <file>    Compare with previous snapshot
 ```
+
+Runtime overlay lives in `runtime/` (OtlpTraceReader, RuntimeOverlay, OtelConfigEmitter).
 
 Default scan exclusions live in `discovery/ScanExclusions.java`.
 

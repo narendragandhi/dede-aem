@@ -14,6 +14,9 @@ import com.dede.cloud.CloudFindings;
 import com.dede.cloud.CloudFindingsService;
 import com.dede.cloud.SarifReport;
 import com.dede.security.DependencyCveImporter;
+import com.dede.runtime.OtelConfigEmitter;
+import com.dede.runtime.OtlpTraceReader;
+import com.dede.runtime.RuntimeOverlay;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import org.slf4j.Logger;
@@ -78,6 +81,8 @@ public class DedeApplication {
             boolean cloudReadiness = false;
             boolean watchMode = false;
             String jsonOutputPath = null;
+            String runtimeTracesPath = null;
+            String otelConfigPath = null;
             String failOn = null;  // gate threshold; null = no gate
             boolean extendedChecks = false;
 
@@ -87,6 +92,12 @@ public class DedeApplication {
                 }
                 if ("--json".equals(args[i]) && i + 1 < args.length) {
                     jsonOutputPath = args[i + 1];
+                }
+                if ("--runtime-traces".equals(args[i]) && i + 1 < args.length) {
+                    runtimeTracesPath = args[i + 1];
+                }
+                if ("--emit-otel-config".equals(args[i]) && i + 1 < args.length) {
+                    otelConfigPath = args[i + 1];
                 }
                 if ("--fail-on-critical".equals(args[i]) && failOn == null) {
                     failOn = "CRITICAL";
@@ -229,8 +240,50 @@ public class DedeApplication {
             // One set of findings (catalog scan + graph checks), shared by the SARIF export, the
             // JSON report and --fail-on / --fail-on-critical -- the same set the Maven plugin gates on.
             Path scanRoot = Path.of(projectPath);
-            boolean needFindings = sarifOutputPath != null || jsonOutputPath != null || failOn != null;
+            boolean needFindings = sarifOutputPath != null || jsonOutputPath != null || failOn != null
+                || runtimeTracesPath != null || otelConfigPath != null;
             CloudFindings findings = needFindings ? cloudFindings.collect(scanRoot, extendedChecks) : null;
+
+            // Runtime overlay: OpenTelemetry traces joined to the code graph.
+            RuntimeOverlay runtime = null;
+            if (runtimeTracesPath != null) {
+                try {
+                    runtime = RuntimeOverlay.apply(OtlpTraceReader.read(Path.of(runtimeTracesPath)), graphService);
+                    log.info("Runtime traces: {} span(s), {} matched to {} project class(es), {} without code attributes, "
+                            + "{} class(es) outside the scanned code",
+                        runtime.totalSpans(), runtime.matchedSpans(), runtime.matchedClassCount(), runtime.unattributedSpans(), runtime.unmatched().size());
+                    if (runtime.matchedClassCount() == 0) {
+                        log.warn("Runtime traces: no span could be tied to project code. Spans need code.namespace/"
+                            + "code.function attributes -- generate an agent config with --emit-otel-config.");
+                    }
+                    var hot = runtime.hotFindings(findings.all());
+                    if (!hot.isEmpty()) {
+                        log.info("Findings in code that ran ({}), most-called first:", hot.size());
+                        hot.stream().limit(10).forEach(e -> log.info("  {} calls  {} [{}] {}", e.getValue(),
+                            e.getKey().severity(), e.getKey().category(), e.getKey().file()));
+                    }
+                } catch (IOException | RuntimeException e) {
+                    // A CI step relying on the overlay must not silently get a report without it.
+                    log.error("Failed to read runtime traces from {}: {}", runtimeTracesPath, e.getMessage());
+                    System.exit(SpringApplication.exit(context, () -> 2));
+                }
+            }
+
+            if (otelConfigPath != null) {
+                int maxClasses = 50;
+                var selections = OtelConfigEmitter.select(graphService, findings.all(), maxClasses);
+                if (selections.size() == maxClasses) {
+                    log.warn("OpenTelemetry config: capped at {} classes to keep agent overhead down; classes with "
+                        + "findings were picked first, then entry points, then by fan-in.", maxClasses);
+                }
+                try {
+                    java.nio.file.Files.writeString(Path.of(otelConfigPath), OtelConfigEmitter.render(selections));
+                    log.info("OpenTelemetry agent config for {} class(es) written to {}", selections.size(), otelConfigPath);
+                } catch (IOException e) {
+                    log.error("Failed to write OpenTelemetry config to {}: {}", otelConfigPath, e.getMessage());
+                    System.exit(SpringApplication.exit(context, () -> 2));
+                }
+            }
 
             // SARIF Report (for GitHub Code Scanning, VS Code Problems panel, SIEMs)
             if (sarifOutputPath != null) {
@@ -267,7 +320,7 @@ public class DedeApplication {
 
             if (jsonOutputPath != null) {
                 log.info("Writing JSON report: {}", jsonOutputPath);
-                Map<String, Object> report = buildJsonReport(projectPath, graphService, findings, suggestions);
+                Map<String, Object> report = buildJsonReport(projectPath, graphService, findings, suggestions, runtime);
                 ObjectMapper mapper = new ObjectMapper().enable(SerializationFeature.INDENT_OUTPUT);
                 try {
                     mapper.writeValue(new File(jsonOutputPath), report);
@@ -297,10 +350,12 @@ public class DedeApplication {
     private static final Set<String> KNOWN_FLAGS = Set.of(
         "--help", "-h", "--rules", "--dot", "--analyze", "--security", "--profiles", "--snapshot",
         "--compare", "--bpa-report", "--sarif", "--suggestions", "--dependency-check-report",
-        "--cloud-readiness", "--watch", "--json", "--fail-on-critical", "--fail-on", "--extended-checks");
+        "--cloud-readiness", "--watch", "--json", "--fail-on-critical", "--fail-on", "--extended-checks",
+        "--runtime-traces", "--emit-otel-config");
 
     private static Map<String, Object> buildJsonReport(String projectPath, GraphService graphService,
-                                                       CloudFindings findings, List<String> suggestions) {
+                                                       CloudFindings findings, List<String> suggestions,
+                                                       RuntimeOverlay runtime) {
         Map<String, Object> graph = new LinkedHashMap<>();
         graph.put("nodes", graphService.getNodeCount());
         graph.put("edges", graphService.getEdgeCount());
@@ -311,7 +366,22 @@ public class DedeApplication {
         report.put("project", projectPath);
         report.put("summary", findings.summary());
         report.put("graph", graph);
-        report.put("violations", findings.all());
+        if (runtime == null) {
+            report.put("violations", findings.all());
+        } else {
+            // Same findings, each with the observed call count of its code (absent = not observed).
+            ObjectMapper mapper = new ObjectMapper();
+            List<Map<String, Object>> violations = new java.util.ArrayList<>();
+            for (CloudFindings.Finding f : findings.all()) {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> row = mapper.convertValue(f, LinkedHashMap.class);
+                Long calls = runtime.callsFor(f);
+                if (calls != null) row.put("runtimeCalls", calls);
+                violations.add(row);
+            }
+            report.put("violations", violations);
+            report.put("runtime", runtime.summary(findings.all(), 20));
+        }
         report.put("suggestions", suggestions);
         return report;
     }
@@ -349,6 +419,8 @@ public class DedeApplication {
         log.info("  --json <path.json>  Export findings (forbidden-API + cloud-readiness), graph stats and suggestions as JSON");
         log.info("  --fail-on-critical  Exit with code 1 if any CRITICAL finding exists (CI gate)");
         log.info("  --fail-on <level>   Exit with code 1 on any finding at <level> or above: CRITICAL, HIGH, MEDIUM, LOW, INFO");
+        log.info("  --runtime-traces <otlp.json>  Join OpenTelemetry traces (Collector file exporter) to the graph; ranks findings by runtime calls");
+        log.info("  --emit-otel-config <path>     Write an OpenTelemetry Java agent config that instruments the classes that matter");
         log.info("  --extended-checks   Also run content-package (OakPal; needs 'mvn package' first), legacy-path and service-user checks");
         log.info("Skipped by default: .git, node_modules, it.tests, ui.tests, Maven target/ and src/test/");
         log.info("  --watch             Start watching for file changes and update incrementally");

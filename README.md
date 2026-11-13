@@ -92,6 +92,8 @@ Options:
   --json <path.json>       Export findings, graph stats and suggestions as JSON
   --fail-on-critical       Exit with code 1 if any CRITICAL finding exists (CI gate)
   --fail-on <level>        Exit with code 1 on any finding at <level> or above (CRITICAL, HIGH, MEDIUM, LOW, INFO)
+  --runtime-traces <file>  Join OpenTelemetry traces to the graph and rank findings by runtime calls
+  --emit-otel-config <f>   Write an OpenTelemetry Java agent config for the classes that matter
   --extended-checks        Also run content-package, legacy-path and service-user checks (see below)
   --security               Enable security surface audit
   --sarif <path.sarif.json> Export forbidden-API findings as SARIF 2.1.0
@@ -143,6 +145,39 @@ in-memory repository without AEM's node types, so import errors that only come f
 product node types or parent nodes are skipped (and counted in the log) rather than reported.
 Factory configurations such as `RepositoryInitializer~myproject.cfg.json` are the supported way
 to customize cloud-managed services and are not flagged.
+
+### Runtime Overlay (OpenTelemetry)
+
+Static findings say what *could* break; traces say what actually runs. Dede joins
+OpenTelemetry traces to its code graph, so you can rank findings by real traffic.
+
+```bash
+# 1. Let the graph pick what to instrument: classes with findings, then AEM entry points
+#    (servlets, filters, Sling Models, OSGi components), then high fan-in. Capped at 50.
+java -jar dede.jar ./my-aem-project --emit-otel-config otel.properties
+
+# 2. Run AEM (or any JVM) with the OpenTelemetry Java agent and that config:
+#    -javaagent:opentelemetry-javaagent.jar -Dotel.javaagent.configuration-file=otel.properties
+#    AEM is OSGi: add io.opentelemetry.* to org.osgi.framework.bootdelegation, or project
+#    spans will be missing.
+
+# 3. Feed the traces back: Collector `file` exporter output, or the agent's own log
+#    with -Dotel.traces.exporter=logging-otlp (no Collector needed).
+java -jar dede.jar ./my-aem-project --runtime-traces traces.json --json report.json
+```
+
+What you get:
+- each finding in the JSON report carries `runtimeCalls`, the observed calls to its code
+  (absent = not observed, which is not the same as dead unless the class was instrumented);
+- a `runtime` block with the trace window, the hottest classes (calls, errors, avg/max ms,
+  per-method calls) and the hottest findings;
+- `runtime.calls`, `runtime.errors`, `runtime.avgMs`, `runtime.maxMs` properties on graph
+  class nodes, visible through the REST and GraphQL APIs.
+
+Spans are tied to code through `code.namespace`/`code.function` (or `code.function.name`);
+auto-instrumented HTTP and JDBC spans don't carry them and are counted as unattributed.
+Verified end to end against the OpenTelemetry Java agent 2.10.0 on a plain JVM; not yet
+against a running AEM instance. Dede reads telemetry -- it is not a tracing backend.
 
 ### Dependency Analysis
 

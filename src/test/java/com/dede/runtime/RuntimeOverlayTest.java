@@ -146,7 +146,7 @@ class RuntimeOverlayTest {
             .isEqualTo("com.acme.TeaserModel[getLink,getTitle];com.acme.ExportServlet[doGet]");
         assertThat(OtelConfigEmitter.render(selections))
             .contains("otel.instrumentation.methods.include=com.acme.TeaserModel[getLink,getTitle];")
-            .contains("org.osgi.framework.bootdelegation");
+            .contains("CQ_JVM_OPTS");
     }
 
     @Test

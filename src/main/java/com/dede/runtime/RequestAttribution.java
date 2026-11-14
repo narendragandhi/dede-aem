@@ -72,6 +72,7 @@ public final class RequestAttribution {
         Map<String, Registration> registrations = new HashMap<>();
         // Resource type -> classes bound to it, through every way the graph records a binding.
         Map<String, Set<String>> resourceTypeServlets = new HashMap<>();
+        Map<String, List<CodeNode>> implementers = implementersBySimpleName(graph);
         for (CodeNode node : graph.getAllNodes()) {
             String id = node.getId();
             if (id.startsWith("path:")) {
@@ -92,10 +93,17 @@ public final class RequestAttribution {
                         registrations.computeIfAbsent(cls.getSignature(), k -> registration(graph, cls));
                     }
                 }
-                // component folder -> HTL template -> data-sly-use class
+                // component folder -> HTL template -> data-sly-use class. HTL usually names the
+                // model interface (data-sly-use="...ImageList"); the code that runs is its
+                // implementation, so bind the implementing classes when there are any.
                 for (CodeNode htl : graph.getRelatedNodes(node, RelationshipType.DEFINES)) {
                     for (CodeNode cls : graph.getRelatedNodes(htl, RelationshipType.USES)) {
-                        bind(cls, bound, classById);
+                        List<CodeNode> impls = implementers.getOrDefault(simpleName(cls.getSignature()), List.of());
+                        if (impls.isEmpty()) {
+                            bind(cls, bound, classById);
+                        } else {
+                            impls.forEach(impl -> bind(impl, bound, classById));
+                        }
                     }
                 }
                 if (bound.isEmpty()) result.classesByResourceType.remove(resourceType);
@@ -147,6 +155,27 @@ public final class RequestAttribution {
             if (node != null) node.getProperties().put(PROP_REQUESTS, Long.toString(count));
         });
         return result;
+    }
+
+    /**
+     * Project classes by the simple name of each interface they implement (or declare as a
+     * Sling Model adapter). The graph records implemented interfaces by the name as written in
+     * source -- usually the simple name -- so that is the join key.
+     */
+    private static Map<String, List<CodeNode>> implementersBySimpleName(GraphService graph) {
+        Map<String, List<CodeNode>> byName = new HashMap<>();
+        for (CodeNode node : graph.getAllNodes()) {
+            if (!node.getId().startsWith("class:") || node.getFilePath() == null) continue;
+            for (CodeNode iface : graph.getRelatedNodes(node, RelationshipType.IMPLEMENTS)) {
+                List<CodeNode> list = byName.computeIfAbsent(simpleName(iface.getName()), k -> new ArrayList<>());
+                if (!list.contains(node)) list.add(node);
+            }
+        }
+        return byName;
+    }
+
+    private static String simpleName(String name) {
+        return name.substring(name.lastIndexOf('.') + 1);
     }
 
     private static boolean bind(CodeNode cls, Set<String> bound, Map<String, CodeNode> classById) {

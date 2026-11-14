@@ -22,6 +22,10 @@ import java.util.stream.Stream;
  * resource types each page and component node uses. Lets a request URL be mapped to the
  * components (and so the Sling Models and servlets) that render it.
  *
+ * <p>A page renders more than its own content: the structure of its editable template
+ * ({@code cq:template} -> {@code <template>/structure}, indexed from {@code jcr_root/conf}) and
+ * any experience fragments it embeds ({@code fragmentVariationPath}). Both are followed.
+ *
  * <p>Only content in the project is known. Production pages authored in AEM (not in the code
  * repository) are not -- their requests stay unattributed unless a path servlet handles them.
  */
@@ -33,6 +37,9 @@ public final class ContentIndex {
     private final Map<String, String> resourceTypeByNode = new HashMap<>();
     /** Page path -> every resource type used anywhere on that page. */
     private final Map<String, Set<String>> resourceTypesByPage = new HashMap<>();
+    /** Page path -> paths it pulls in at render time (template structure, experience fragments). */
+    private final Map<String, Set<String>> includesByPage = new HashMap<>();
+    private static final int MAX_INCLUDE_DEPTH = 5;
 
     public static ContentIndex build(Path projectRoot) {
         ContentIndex index = new ContentIndex();
@@ -56,6 +63,7 @@ public final class ContentIndex {
     private void add(Path file) {
         String normalized = file.toString().replace('\\', '/');
         int root = normalized.indexOf("/jcr_root/content/");
+        if (root < 0) root = normalized.indexOf("/jcr_root/conf/");
         if (root < 0) return;
         String pagePath = normalized.substring(root + "/jcr_root".length(), normalized.length() - "/.content.xml".length());
         try (var in = Files.newInputStream(file)) {
@@ -76,21 +84,35 @@ public final class ContentIndex {
 
     private void addDocument(String pagePath, Element root) {
         Set<String> onPage = new LinkedHashSet<>();
-        walk(root, pagePath, onPage);
+        Set<String> includes = new LinkedHashSet<>();
+        walk(root, pagePath, onPage, includes);
+        // Several content packages can define the same page (WKND's ui.content and
+        // ui.content.sample both ship /content/wknd/us/en); AEM merges them on install, so union.
         if (!onPage.isEmpty()) {
-            resourceTypesByPage.put(pagePath, onPage);
+            resourceTypesByPage.computeIfAbsent(pagePath, k -> new LinkedHashSet<>()).addAll(onPage);
+        }
+        if (!includes.isEmpty()) {
+            includesByPage.computeIfAbsent(pagePath, k -> new LinkedHashSet<>()).addAll(includes);
         }
     }
 
-    private void walk(Element element, String nodePath, Set<String> onPage) {
+    private void walk(Element element, String nodePath, Set<String> onPage, Set<String> includes) {
         String resourceType = element.getAttribute("sling:resourceType");
         if (!resourceType.isEmpty()) {
             resourceTypeByNode.put(nodePath, resourceType);
             onPage.add(resourceType);
         }
+        String template = element.getAttribute("cq:template");
+        if (template.startsWith("/conf/")) {
+            includes.add(template + "/structure");
+        }
+        String fragment = element.getAttribute("fragmentVariationPath");
+        if (fragment.startsWith("/content/")) {
+            includes.add(fragment);
+        }
         for (Node child = element.getFirstChild(); child != null; child = child.getNextSibling()) {
             if (child instanceof Element childElement) {
-                walk(childElement, nodePath + "/" + childElement.getTagName(), onPage);
+                walk(childElement, nodePath + "/" + childElement.getTagName(), onPage, includes);
             }
         }
     }
@@ -108,14 +130,26 @@ public final class ContentIndex {
     private final Map<String, Set<String>> lookups = new HashMap<>();
 
     private Set<String> lookup(String resourcePath) {
-        Set<String> page = resourceTypesByPage.get(resourcePath);
-        if (page != null) return page;
+        if (resourceTypesByPage.containsKey(resourcePath)) {
+            Set<String> rendered = new LinkedHashSet<>();
+            collectPage(resourcePath, rendered, new java.util.HashSet<>(), 0);
+            return rendered;
+        }
         Set<String> subtree = new LinkedHashSet<>();
         String prefix = resourcePath + "/";
         resourceTypeByNode.forEach((path, type) -> {
             if (path.equals(resourcePath) || path.startsWith(prefix)) subtree.add(type);
         });
         return subtree;
+    }
+
+    /** A page's own resource types plus those of its template structure and embedded fragments. */
+    private void collectPage(String pagePath, Set<String> out, Set<String> visited, int depth) {
+        if (depth > MAX_INCLUDE_DEPTH || !visited.add(pagePath)) return;
+        out.addAll(resourceTypesByPage.getOrDefault(pagePath, Set.of()));
+        for (String include : includesByPage.getOrDefault(pagePath, Set.of())) {
+            collectPage(include, out, visited, depth + 1);
+        }
     }
 
     /**

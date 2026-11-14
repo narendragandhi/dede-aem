@@ -160,8 +160,8 @@ java -jar dede.jar ./my-aem-project --emit-otel-config otel.properties
 
 # 2. Run AEM (or any JVM) with the OpenTelemetry Java agent and that config:
 #    -javaagent:opentelemetry-javaagent.jar -Dotel.javaagent.configuration-file=otel.properties
-#    AEM is OSGi: add io.opentelemetry.* to org.osgi.framework.bootdelegation, or project
-#    spans will be missing.
+#    On the AEM SDK: CQ_JVM_OPTS="... -javaagent:... -Dotel.javaagent.configuration-file=..."
+#    crx-quickstart/bin/start. No OSGi boot-delegation change was needed (agent 2.10).
 
 # 3. Feed the traces back: Collector `file` exporter output, or the agent's own log
 #    with -Dotel.traces.exporter=logging-otlp (no Collector needed).
@@ -197,8 +197,12 @@ resource types with project code that never rendered, top unattributed paths) an
 get `runtime.requests`. Counts are estimated renders. Pages authored only in AEM (not in the
 repository) can't be resolved and stay unattributed. Because it reads AEM's own logs, this
 works on AEM as a Cloud Service too.
-Verified end to end against the OpenTelemetry Java agent 2.10.0 on a plain JVM; not yet
-against a running AEM instance. Dede reads telemetry -- it is not a tracing backend.
+**Verified on a running AEM** (AEM SDK author, OpenTelemetry Java agent 2.10.0, Adobe's WKND):
+dede's generated config instrumented WKND's Sling Models inside their OSGi bundle, and
+request attribution from AEM's `request.log` matched the trace ground truth (trace ID -> URL ->
+model) for every page browsed: image list on home/adventures/magazine, byline (via experience
+fragment) on articles, nothing for 404s and login. Dede reads telemetry -- it is not a
+tracing backend.
 
 ### Dependency Analysis
 

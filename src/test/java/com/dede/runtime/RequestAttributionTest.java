@@ -198,4 +198,77 @@ class RequestAttributionTest {
         assertThat(index.pageCount()).isEqualTo(1);
         assertThat(index.primaryResourceType("/content/site/fr")).isEqualTo("site/components/page");
     }
+
+    // --- Found on a real AEM run with Adobe's WKND (2026-11-14), checked against trace ground truth ---
+
+    @Test
+    void htlInterfaceReferencesBindToTheImplementation() throws Exception {
+        // data-sly-use="com.acme.Gallery" names the interface; GalleryImpl is what runs.
+        CodeNode gallery = node("res:site/components/gallery", "site/components/gallery", NodeType.JCR_RESOURCE_TYPE);
+        CodeNode htl = node("htl:gallery.html", "gallery.html", NodeType.HTL_FILE);
+        graph.addEdge(gallery, htl, RelationshipType.DEFINES);
+        graph.addEdge(htl, cls("com.acme.Gallery", NodeType.INTERFACE), RelationshipType.USES);
+        graph.addEdge(cls("com.acme.GalleryImpl", NodeType.SLING_MODEL),
+            node("interface:Gallery", "Gallery", NodeType.INTERFACE), RelationshipType.IMPLEMENTS);
+        ContentIndex index = ContentIndex.of("/content/site/gallery", """
+            <jcr:root xmlns:jcr="http://www.jcp.org/jcr/1.0" xmlns:sling="http://sling.apache.org/jcr/sling/1.0">
+              <jcr:content sling:resourceType="site/components/page"><g sling:resourceType="site/components/gallery"/></jcr:content>
+            </jcr:root>
+            """);
+
+        RequestAttribution result = RequestAttribution.apply(List.of(get("/content/site/gallery.html")), index, graph);
+        assertThat(result.requestsFor("com.acme.GalleryImpl")).isEqualTo(1L);
+        assertThat(result.requestsFor("com.acme.Gallery")).isNull();
+    }
+
+    @Test
+    void pagesIncludeTheirTemplateStructureAndExperienceFragments() throws IOException {
+        write("ui.content/src/main/content/jcr_root/content/site/article/.content.xml", """
+            <jcr:root xmlns:jcr="http://www.jcp.org/jcr/1.0" xmlns:sling="http://sling.apache.org/jcr/sling/1.0"
+                      xmlns:cq="http://www.day.com/jcr/cq/1.0">
+              <jcr:content cq:template="/conf/site/settings/wcm/templates/article" sling:resourceType="site/components/page">
+                <xf sling:resourceType="site/components/experiencefragment"
+                    fragmentVariationPath="/content/experience-fragments/site/byline/master"/>
+              </jcr:content>
+            </jcr:root>
+            """);
+        write("ui.content/src/main/content/jcr_root/conf/site/settings/wcm/templates/article/structure/.content.xml", """
+            <jcr:root xmlns:jcr="http://www.jcp.org/jcr/1.0" xmlns:sling="http://sling.apache.org/jcr/sling/1.0">
+              <jcr:content><footer sling:resourceType="site/components/teaser"/></jcr:content>
+            </jcr:root>
+            """);
+        write("ui.content/src/main/content/jcr_root/content/experience-fragments/site/byline/master/.content.xml", """
+            <jcr:root xmlns:jcr="http://www.jcp.org/jcr/1.0" xmlns:sling="http://sling.apache.org/jcr/sling/1.0">
+              <jcr:content><byline sling:resourceType="site/components/byline"/></jcr:content>
+            </jcr:root>
+            """);
+
+        assertThat(ContentIndex.build(dir).resourceTypesFor("/content/site/article")).contains(
+            "site/components/page", "site/components/experiencefragment",
+            "site/components/teaser",    // from the template structure
+            "site/components/byline");   // from the experience fragment
+    }
+
+    @Test
+    void aPageDefinedInTwoContentPackagesIsTheUnionOfBoth() throws IOException {
+        write("ui.content/src/main/content/jcr_root/content/site/home/.content.xml", """
+            <jcr:root xmlns:jcr="http://www.jcp.org/jcr/1.0" xmlns:sling="http://sling.apache.org/jcr/sling/1.0">
+              <jcr:content sling:resourceType="site/components/page"/>
+            </jcr:root>
+            """);
+        write("ui.content.sample/src/main/content/jcr_root/content/site/home/.content.xml", """
+            <jcr:root xmlns:jcr="http://www.jcp.org/jcr/1.0" xmlns:sling="http://sling.apache.org/jcr/sling/1.0">
+              <jcr:content sling:resourceType="site/components/page"><list sling:resourceType="site/components/image-list"/></jcr:content>
+            </jcr:root>
+            """);
+
+        assertThat(ContentIndex.build(dir).resourceTypesFor("/content/site/home"))
+            .contains("site/components/page", "site/components/image-list");
+    }
+
+    private void write(String relative, String content) throws IOException {
+        Path file = dir.resolve(relative);
+        Files.createDirectories(file.getParent());
+        Files.writeString(file, content);
+    }
 }

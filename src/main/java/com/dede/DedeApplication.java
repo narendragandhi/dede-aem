@@ -324,8 +324,12 @@ public class DedeApplication {
             // Request attribution: HTTP server spans and/or AEM request.log/access.log -> code.
             RequestAttribution requestAttribution = null;
             List<RequestLogReader.RequestRecord> requests = new java.util.ArrayList<>();
-            if (runtime != null) {
+            if (runtime != null && requestLogPath == null) {
                 requests.addAll(runtime.serverRequests());
+            } else if (runtime != null && !runtime.serverRequests().isEmpty()) {
+                // Both describe the same traffic; counting both doubles every request.
+                log.info("Requests: using --request-log; ignoring {} HTTP server span(s) from the traces "
+                    + "(same requests, would be counted twice).", runtime.serverRequests().size());
             }
             if (requestLogPath != null) {
                 try {

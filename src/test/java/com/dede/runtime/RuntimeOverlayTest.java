@@ -150,8 +150,10 @@ class RuntimeOverlayTest {
     }
 
     @Test
-    void emitterSkipsPlainClassesNobodyDependsOnAndHonorsTheCap() {
-        assertThat(OtelConfigEmitter.select(graph, List.of(), 50)).isEmpty();
+    void emitterAddsUnreferencedClassesLastAsDeadCodeSuspectsAndHonorsTheCap() {
+        assertThat(OtelConfigEmitter.select(graph, List.of(), 50))
+            .extracting(OtelConfigEmitter.Selection::reason)
+            .containsOnly(OtelConfigEmitter.REASON_NO_REFERENCES);
 
         CodeNode servlet = graph.findNodeById("class:com.acme.ExportServlet").orElseThrow();
         servlet.setType(NodeType.SLING_SERVLET);
@@ -169,6 +171,54 @@ class RuntimeOverlayTest {
 
         assertThat(OtelConfigEmitter.fanIn(graph, model)).isEqualTo(1);
         assertThat(OtelConfigEmitter.select(graph, List.of(), 50))
-            .extracting(OtelConfigEmitter.Selection::reason).containsExactly("fan-in 1");
+            .extracting(OtelConfigEmitter.Selection::reason)
+            .containsExactly("fan-in 1", OtelConfigEmitter.REASON_NO_REFERENCES);
+    }
+
+    @Test
+    void readsInstrumentedClassesBackFromAGeneratedConfig() throws IOException {
+        CodeNode servlet = graph.findNodeById("class:com.acme.ExportServlet").orElseThrow();
+        servlet.setType(NodeType.SLING_SERVLET);
+        Path config = dir.resolve("otel.properties");
+        Files.writeString(config, OtelConfigEmitter.render(OtelConfigEmitter.select(graph, List.of(), 50)));
+
+        assertThat(OtelConfigEmitter.readInstrumentedClasses(config))
+            .containsExactlyInAnyOrder("com.acme.ExportServlet", "com.acme.TeaserModel");
+    }
+
+    @Test
+    void configWithoutMethodsIncludeIsRejected() throws IOException {
+        Path config = dir.resolve("empty.properties");
+        Files.writeString(config, "otel.service.name=aem\n");
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> OtelConfigEmitter.readInstrumentedClasses(config))
+            .isInstanceOf(IOException.class).hasMessageContaining("methods.include");
+    }
+
+    @Test
+    void instrumentedButNeverCalledGetsAVerdictFromTheGraph() {
+        CodeNode servlet = graph.findNodeById("class:com.acme.ExportServlet").orElseThrow();
+        servlet.setType(NodeType.SLING_SERVLET);
+        RuntimeOverlay overlay = RuntimeOverlay.apply(List.of(span("com.acme.TeaserModel", "getTitle", 1, false)), graph);
+
+        List<Map<String, Object>> rows = overlay.instrumentedNotCalled(
+            new java.util.LinkedHashSet<>(List.of("com.acme.TeaserModel", "com.acme.ExportServlet", "com.acme.Gone")), graph);
+
+        assertThat(rows).extracting(r -> r.get("class"), r -> r.get("verdict")).containsExactly(
+            org.assertj.core.groups.Tuple.tuple("com.acme.ExportServlet", "entry point never invoked in the window"),
+            org.assertj.core.groups.Tuple.tuple("com.acme.Gone", "not in the scanned code (config out of date?)"));
+
+        CodeNode helper = new CodeNode("class:com.acme.Helper", "Helper", NodeType.CLASS, "com.acme.Helper", "Helper.java");
+        graph.addNode(helper);
+        assertThat(overlay.instrumentedNotCalled(java.util.Set.of("com.acme.Helper"), graph))
+            .singleElement().extracting(r -> r.get("verdict"))
+            .isEqualTo("likely dead: no static references and no calls");
+    }
+
+    @Test
+    void windowLabelScalesToTheWindow() {
+        RuntimeOverlay seconds = RuntimeOverlay.apply(List.of(
+            new SpanRecord("com.acme.TeaserModel", "getTitle", 1_000_000_000_000L, 42_000_000_000L, false)), graph);
+        assertThat(seconds.windowLabel()).isEqualTo("42 s");
     }
 }

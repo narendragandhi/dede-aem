@@ -42,7 +42,17 @@ public class DedeApplication {
     private static final String VERSION = "2.0.0";
 
     public static void main(String[] args) {
-        SpringApplication.run(DedeApplication.class, args);
+        SpringApplication app = new SpringApplication(DedeApplication.class);
+        if (isOneShotScan(args)) {
+            // A CLI scan runs and exits: don't start the REST/GraphQL server (and its API-key
+            // banner). Server mode (no args) and --watch keep the web layer.
+            app.setWebApplicationType(org.springframework.boot.WebApplicationType.NONE);
+        }
+        app.run(args);
+    }
+
+    static boolean isOneShotScan(String[] args) {
+        return args.length > 0 && !args[0].startsWith("-") && !java.util.Arrays.asList(args).contains("--watch");
     }
 
     @Bean
@@ -83,6 +93,8 @@ public class DedeApplication {
             String jsonOutputPath = null;
             String runtimeTracesPath = null;
             String otelConfigPath = null;
+            String instrumentedConfigPath = null;
+            int otelMaxClasses = 50;
             String failOn = null;  // gate threshold; null = no gate
             boolean extendedChecks = false;
 
@@ -98,6 +110,17 @@ public class DedeApplication {
                 }
                 if ("--emit-otel-config".equals(args[i]) && i + 1 < args.length) {
                     otelConfigPath = args[i + 1];
+                }
+                if ("--otel-config".equals(args[i]) && i + 1 < args.length) {
+                    instrumentedConfigPath = args[i + 1];
+                }
+                if ("--otel-max-classes".equals(args[i]) && i + 1 < args.length) {
+                    try {
+                        otelMaxClasses = Integer.parseInt(args[i + 1]);
+                    } catch (NumberFormatException e) {
+                        log.error("--otel-max-classes: not a number: {}", args[i + 1]);
+                        System.exit(SpringApplication.exit(context, () -> 2));
+                    }
                 }
                 if ("--fail-on-critical".equals(args[i]) && failOn == null) {
                     failOn = "CRITICAL";
@@ -246,6 +269,11 @@ public class DedeApplication {
 
             // Runtime overlay: OpenTelemetry traces joined to the code graph.
             RuntimeOverlay runtime = null;
+            List<Map<String, Object>> instrumentedNotCalled = null;
+            if (instrumentedConfigPath != null && runtimeTracesPath == null) {
+                log.error("--otel-config needs --runtime-traces: it says which classes the traces were watching.");
+                System.exit(SpringApplication.exit(context, () -> 2));
+            }
             if (runtimeTracesPath != null) {
                 try {
                     runtime = RuntimeOverlay.apply(OtlpTraceReader.read(Path.of(runtimeTracesPath)), graphService);
@@ -255,6 +283,17 @@ public class DedeApplication {
                     if (runtime.matchedClassCount() == 0) {
                         log.warn("Runtime traces: no span could be tied to project code. Spans need code.namespace/"
                             + "code.function attributes -- generate an agent config with --emit-otel-config.");
+                    }
+                    if (instrumentedConfigPath != null) {
+                        instrumentedNotCalled = runtime.instrumentedNotCalled(
+                            OtelConfigEmitter.readInstrumentedClasses(Path.of(instrumentedConfigPath)), graphService);
+                        log.info("Instrumented but never called in a {} trace window: {} class(es)",
+                            runtime.windowLabel(), instrumentedNotCalled.size());
+                        instrumentedNotCalled.stream().limit(10).forEach(r -> log.info("  {} -- {}", r.get("class"), r.get("verdict")));
+                        if (runtime.windowHours() < 24) {
+                            log.warn("Trace window is under 24 hours: 'never called' only covers that window "
+                                + "(scheduled and monthly jobs may simply not have run).");
+                        }
                     }
                     var hot = runtime.hotFindings(findings.all());
                     if (!hot.isEmpty()) {
@@ -270,7 +309,7 @@ public class DedeApplication {
             }
 
             if (otelConfigPath != null) {
-                int maxClasses = 50;
+                int maxClasses = otelMaxClasses;
                 var selections = OtelConfigEmitter.select(graphService, findings.all(), maxClasses);
                 if (selections.size() == maxClasses) {
                     log.warn("OpenTelemetry config: capped at {} classes to keep agent overhead down; classes with "
@@ -320,7 +359,7 @@ public class DedeApplication {
 
             if (jsonOutputPath != null) {
                 log.info("Writing JSON report: {}", jsonOutputPath);
-                Map<String, Object> report = buildJsonReport(projectPath, graphService, findings, suggestions, runtime);
+                Map<String, Object> report = buildJsonReport(projectPath, graphService, findings, suggestions, runtime, instrumentedNotCalled);
                 ObjectMapper mapper = new ObjectMapper().enable(SerializationFeature.INDENT_OUTPUT);
                 try {
                     mapper.writeValue(new File(jsonOutputPath), report);
@@ -351,11 +390,12 @@ public class DedeApplication {
         "--help", "-h", "--rules", "--dot", "--analyze", "--security", "--profiles", "--snapshot",
         "--compare", "--bpa-report", "--sarif", "--suggestions", "--dependency-check-report",
         "--cloud-readiness", "--watch", "--json", "--fail-on-critical", "--fail-on", "--extended-checks",
-        "--runtime-traces", "--emit-otel-config");
+        "--runtime-traces", "--emit-otel-config", "--otel-config", "--otel-max-classes");
 
     private static Map<String, Object> buildJsonReport(String projectPath, GraphService graphService,
                                                        CloudFindings findings, List<String> suggestions,
-                                                       RuntimeOverlay runtime) {
+                                                       RuntimeOverlay runtime,
+                                                       List<Map<String, Object>> instrumentedNotCalled) {
         Map<String, Object> graph = new LinkedHashMap<>();
         graph.put("nodes", graphService.getNodeCount());
         graph.put("edges", graphService.getEdgeCount());
@@ -380,7 +420,12 @@ public class DedeApplication {
                 violations.add(row);
             }
             report.put("violations", violations);
-            report.put("runtime", runtime.summary(findings.all(), 20));
+            Map<String, Object> runtimeBlock = runtime.summary(findings.all(), 20);
+            if (instrumentedNotCalled != null) {
+                runtimeBlock.put("windowHours", Math.round(runtime.windowHours() * 100) / 100.0);
+                runtimeBlock.put("instrumentedNotCalled", instrumentedNotCalled);
+            }
+            report.put("runtime", runtimeBlock);
         }
         report.put("suggestions", suggestions);
         return report;
@@ -421,6 +466,8 @@ public class DedeApplication {
         log.info("  --fail-on <level>   Exit with code 1 on any finding at <level> or above: CRITICAL, HIGH, MEDIUM, LOW, INFO");
         log.info("  --runtime-traces <otlp.json>  Join OpenTelemetry traces (Collector file exporter) to the graph; ranks findings by runtime calls");
         log.info("  --emit-otel-config <path>     Write an OpenTelemetry Java agent config that instruments the classes that matter");
+        log.info("  --otel-max-classes <n>        Class cap for --emit-otel-config (default 50)");
+        log.info("  --otel-config <path>          With --runtime-traces: the agent config used, to report instrumented-but-never-called classes");
         log.info("  --extended-checks   Also run content-package (OakPal; needs 'mvn package' first), legacy-path and service-user checks");
         log.info("Skipped by default: .git, node_modules, it.tests, ui.tests, Maven target/ and src/test/");
         log.info("  --watch             Start watching for file changes and update incrementally");

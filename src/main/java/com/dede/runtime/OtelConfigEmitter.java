@@ -28,6 +28,8 @@ import java.util.TreeSet;
  */
 public final class OtelConfigEmitter {
 
+    public static final String REASON_NO_REFERENCES = "no static references (dead-code suspect)";
+
     /** Edges that express structure, not dependency; they don't count toward fan-in. */
     private static final Set<RelationshipType> STRUCTURAL = Set.of(RelationshipType.CONTAINS, RelationshipType.DECLARES);
 
@@ -47,7 +49,9 @@ public final class OtelConfigEmitter {
      *   <li>classes with (non-INFO) findings -- do they run, and how often?</li>
      *   <li>AEM entry points (servlets, filters, Sling Models, OSGi components, job and
      *       workflow processors) -- where requests and background work enter project code;</li>
-     *   <li>other classes other code depends on, by fan-in.</li>
+     *   <li>other classes other code depends on, by fan-in;</li>
+     *   <li>classes with no static references at all -- dead-code suspects. Instrumenting them
+     *       is what turns "no calls observed" into evidence (see {@code --otel-config}).</li>
      * </ol>
      * Within a tier, higher fan-in first. Interfaces and classes without declared methods are skipped.
      */
@@ -84,6 +88,11 @@ public final class OtelConfigEmitter {
         for (CodeNode n : candidates) {
             if (fanIn.get(n) > 0) {
                 add(selected, graph, n, "fan-in " + fanIn.get(n), maxClasses);
+            }
+        }
+        for (CodeNode n : candidates) {
+            if (fanIn.get(n) == 0 && !isEntryPoint(graph, n)) {
+                add(selected, graph, n, REASON_NO_REFERENCES, maxClasses);
             }
         }
         return new ArrayList<>(selected.values());
@@ -135,6 +144,30 @@ public final class OtelConfigEmitter {
             value.append(s.className()).append('[').append(String.join(",", s.methods())).append(']');
         }
         return value.toString();
+    }
+
+    /**
+     * Class names a generated (or hand-written) agent config instruments, read from its
+     * {@code otel.instrumentation.methods.include}. Lets the overlay tell "instrumented and
+     * never called" apart from "not instrumented".
+     */
+    public static Set<String> readInstrumentedClasses(Path configFile) throws java.io.IOException {
+        java.util.Properties props = new java.util.Properties();
+        try (var in = java.nio.file.Files.newBufferedReader(configFile)) {
+            props.load(in);
+        }
+        String include = props.getProperty("otel.instrumentation.methods.include", "");
+        Set<String> classes = new java.util.LinkedHashSet<>();
+        for (String entry : include.split(";")) {
+            String trimmed = entry.trim();
+            if (trimmed.isEmpty()) continue;
+            int bracket = trimmed.indexOf('[');
+            classes.add(bracket > 0 ? trimmed.substring(0, bracket).trim() : trimmed);
+        }
+        if (classes.isEmpty()) {
+            throw new java.io.IOException("no otel.instrumentation.methods.include entries in " + configFile);
+        }
+        return classes;
     }
 
     /** A complete agent configuration file ({@code -Dotel.javaagent.configuration-file=...}). */

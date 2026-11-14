@@ -173,6 +173,52 @@ public final class RuntimeOverlay {
         return matched.values().stream().sorted(Comparator.comparingLong(ClassStats::calls).reversed()).toList();
     }
 
+    /** Length of the trace window in hours (0 when the spans carried no timestamps). */
+    public double windowHours() {
+        return windowEndNanos > windowStartNanos ? (windowEndNanos - windowStartNanos) / 3.6e12 : 0;
+    }
+
+    /**
+     * Classes the agent was configured to instrument that produced no span in the window.
+     * Unlike "no calls observed" in general, this is evidence: the code was watched and did
+     * not run. How strong the evidence is depends on the window -- a 10-minute test run says
+     * little about a monthly job.
+     */
+    public List<Map<String, Object>> instrumentedNotCalled(java.util.Set<String> instrumented, GraphService graph) {
+        java.util.Set<String> observed = new java.util.HashSet<>();
+        matched.values().forEach(s -> observed.add(s.className()));
+        List<Map<String, Object>> rows = new ArrayList<>();
+        for (String className : instrumented) {
+            if (observed.contains(className)) continue;
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("class", className);
+            Optional<CodeNode> node = findClassNode(graph, className);
+            if (node.isEmpty()) {
+                row.put("verdict", "not in the scanned code (config out of date?)");
+            } else {
+                boolean entryPoint = OtelConfigEmitter.isEntryPoint(graph, node.get());
+                int fanIn = OtelConfigEmitter.fanIn(graph, node.get());
+                row.put("type", node.get().getType().name());
+                row.put("staticReferences", fanIn);
+                row.put("verdict", entryPoint
+                    ? "entry point never invoked in the window"
+                    : fanIn == 0 ? "likely dead: no static references and no calls"
+                    : "referenced but not called in the window");
+            }
+            rows.add(row);
+        }
+        return rows;
+    }
+
+    /** Human-readable window length: "42 s", "15 min", "3.5 h". */
+    public String windowLabel() {
+        double hours = windowHours();
+        if (hours >= 1) return String.format(java.util.Locale.ROOT, "%.1f h", hours);
+        double minutes = hours * 60;
+        if (minutes >= 1) return String.format(java.util.Locale.ROOT, "%.0f min", minutes);
+        return String.format(java.util.Locale.ROOT, "%.0f s", minutes * 60);
+    }
+
     public int totalSpans() { return totalSpans; }
     public int unattributedSpans() { return unattributedSpans; }
     /** Spans tied to a class in the scanned project. */

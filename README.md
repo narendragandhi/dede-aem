@@ -94,6 +94,8 @@ Options:
   --fail-on <level>        Exit with code 1 on any finding at <level> or above (CRITICAL, HIGH, MEDIUM, LOW, INFO)
   --runtime-traces <file>  Join OpenTelemetry traces to the graph and rank findings by runtime calls
   --emit-otel-config <f>   Write an OpenTelemetry Java agent config for the classes that matter
+  --otel-config <f>        With --runtime-traces: the config used, to report instrumented-but-never-called classes
+  --request-log <f>        AEM request.log / access.log: attribute requests to servlets, components and models
   --extended-checks        Also run content-package, legacy-path and service-user checks (see below)
   --security               Enable security surface audit
   --sarif <path.sarif.json> Export forbidden-API findings as SARIF 2.1.0
@@ -174,8 +176,27 @@ What you get:
 - `runtime.calls`, `runtime.errors`, `runtime.avgMs`, `runtime.maxMs` properties on graph
   class nodes, visible through the REST and GraphQL APIs.
 
-Spans are tied to code through `code.namespace`/`code.function` (or `code.function.name`);
-auto-instrumented HTTP and JDBC spans don't carry them and are counted as unattributed.
+Spans are tied to code through `code.namespace`/`code.function` (or `code.function.name`).
+
+**Confirmed dead code.** The generated config also instruments classes with no static
+references. Pass it back with `--otel-config otel.properties` and every instrumented class that
+produced no span is listed under `runtime.instrumentedNotCalled` with a verdict -- *likely dead*,
+*entry point never invoked*, or *referenced but not called* -- and the window length. A short
+window only proves the code didn't run in that window.
+
+**Request attribution (no method instrumentation needed).** HTTP server spans, or AEM's own
+`request.log` / `access.log` via `--request-log`, are attributed to project code:
+- `@SlingServletPaths` servlets by path (exact, `.ext`, or `/suffix`);
+- `/content` requests through the project's content (`ui.content`) to the resource types on the
+  page, then to the Sling Models (`@Model(resourceType)` or HTL `data-sly-use`) and
+  `@SlingServletResourceTypes` servlets bound to them -- honoring the servlet's selectors and
+  extensions, and counting a page as rendered only when no servlet took the request.
+
+The JSON report gets a `requests` block (requests per class, renders per resource type,
+resource types with project code that never rendered, top unattributed paths) and class nodes
+get `runtime.requests`. Counts are estimated renders. Pages authored only in AEM (not in the
+repository) can't be resolved and stay unattributed. Because it reads AEM's own logs, this
+works on AEM as a Cloud Service too.
 Verified end to end against the OpenTelemetry Java agent 2.10.0 on a plain JVM; not yet
 against a running AEM instance. Dede reads telemetry -- it is not a tracing backend.
 

@@ -17,6 +17,9 @@ import com.dede.security.DependencyCveImporter;
 import com.dede.runtime.OtelConfigEmitter;
 import com.dede.runtime.OtlpTraceReader;
 import com.dede.runtime.RuntimeOverlay;
+import com.dede.runtime.ContentIndex;
+import com.dede.runtime.RequestAttribution;
+import com.dede.runtime.RequestLogReader;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import org.slf4j.Logger;
@@ -94,6 +97,7 @@ public class DedeApplication {
             String runtimeTracesPath = null;
             String otelConfigPath = null;
             String instrumentedConfigPath = null;
+            String requestLogPath = null;
             int otelMaxClasses = 50;
             String failOn = null;  // gate threshold; null = no gate
             boolean extendedChecks = false;
@@ -110,6 +114,9 @@ public class DedeApplication {
                 }
                 if ("--emit-otel-config".equals(args[i]) && i + 1 < args.length) {
                     otelConfigPath = args[i + 1];
+                }
+                if ("--request-log".equals(args[i]) && i + 1 < args.length) {
+                    requestLogPath = args[i + 1];
                 }
                 if ("--otel-config".equals(args[i]) && i + 1 < args.length) {
                     instrumentedConfigPath = args[i + 1];
@@ -281,8 +288,14 @@ public class DedeApplication {
                             + "{} class(es) outside the scanned code",
                         runtime.totalSpans(), runtime.matchedSpans(), runtime.matchedClassCount(), runtime.unattributedSpans(), runtime.unmatched().size());
                     if (runtime.matchedClassCount() == 0) {
-                        log.warn("Runtime traces: no span could be tied to project code. Spans need code.namespace/"
-                            + "code.function attributes -- generate an agent config with --emit-otel-config.");
+                        String hint = "no method span could be tied to project code. Method spans need code.namespace/"
+                            + "code.function attributes -- generate an agent config with --emit-otel-config.";
+                        if (runtime.serverRequests().isEmpty()) {
+                            log.warn("Runtime traces: {}", hint);
+                        } else {
+                            log.info("Runtime traces: {} HTTP request span(s) will be attributed by path; {}",
+                                runtime.serverRequests().size(), hint);
+                        }
                     }
                     if (instrumentedConfigPath != null) {
                         instrumentedNotCalled = runtime.instrumentedNotCalled(
@@ -305,6 +318,32 @@ public class DedeApplication {
                     // A CI step relying on the overlay must not silently get a report without it.
                     log.error("Failed to read runtime traces from {}: {}", runtimeTracesPath, e.getMessage());
                     System.exit(SpringApplication.exit(context, () -> 2));
+                }
+            }
+
+            // Request attribution: HTTP server spans and/or AEM request.log/access.log -> code.
+            RequestAttribution requestAttribution = null;
+            List<RequestLogReader.RequestRecord> requests = new java.util.ArrayList<>();
+            if (runtime != null) {
+                requests.addAll(runtime.serverRequests());
+            }
+            if (requestLogPath != null) {
+                try {
+                    requests.addAll(RequestLogReader.read(Path.of(requestLogPath)));
+                } catch (IOException e) {
+                    log.error("Failed to read request log {}: {}", requestLogPath, e.getMessage());
+                    System.exit(SpringApplication.exit(context, () -> 2));
+                }
+            }
+            if (!requests.isEmpty()) {
+                ContentIndex content = ContentIndex.build(scanRoot);
+                requestAttribution = RequestAttribution.apply(requests, content, graphService);
+                log.info("Requests: {} total, {} attributed to project code ({} content page(s) indexed)",
+                    requestAttribution.total(), requestAttribution.attributed(), content.pageCount());
+                requestAttribution.hotClasses(10).forEach(e -> log.info("  {} requests  {}", e.getValue(), e.getKey()));
+                List<String> neverRendered = requestAttribution.resourceTypesNeverRendered();
+                if (!neverRendered.isEmpty()) {
+                    log.info("Resource types with project models/servlets never rendered: {}", neverRendered.size());
                 }
             }
 
@@ -359,7 +398,8 @@ public class DedeApplication {
 
             if (jsonOutputPath != null) {
                 log.info("Writing JSON report: {}", jsonOutputPath);
-                Map<String, Object> report = buildJsonReport(projectPath, graphService, findings, suggestions, runtime, instrumentedNotCalled);
+                Map<String, Object> report = buildJsonReport(projectPath, graphService, findings, suggestions, runtime, instrumentedNotCalled,
+                    requestAttribution);
                 ObjectMapper mapper = new ObjectMapper().enable(SerializationFeature.INDENT_OUTPUT);
                 try {
                     mapper.writeValue(new File(jsonOutputPath), report);
@@ -390,12 +430,14 @@ public class DedeApplication {
         "--help", "-h", "--rules", "--dot", "--analyze", "--security", "--profiles", "--snapshot",
         "--compare", "--bpa-report", "--sarif", "--suggestions", "--dependency-check-report",
         "--cloud-readiness", "--watch", "--json", "--fail-on-critical", "--fail-on", "--extended-checks",
-        "--runtime-traces", "--emit-otel-config", "--otel-config", "--otel-max-classes");
+        "--runtime-traces", "--emit-otel-config", "--otel-config", "--otel-max-classes",
+        "--request-log");
 
     private static Map<String, Object> buildJsonReport(String projectPath, GraphService graphService,
                                                        CloudFindings findings, List<String> suggestions,
                                                        RuntimeOverlay runtime,
-                                                       List<Map<String, Object>> instrumentedNotCalled) {
+                                                       List<Map<String, Object>> instrumentedNotCalled,
+                                                       RequestAttribution requestAttribution) {
         Map<String, Object> graph = new LinkedHashMap<>();
         graph.put("nodes", graphService.getNodeCount());
         graph.put("edges", graphService.getEdgeCount());
@@ -426,6 +468,9 @@ public class DedeApplication {
                 runtimeBlock.put("instrumentedNotCalled", instrumentedNotCalled);
             }
             report.put("runtime", runtimeBlock);
+        }
+        if (requestAttribution != null) {
+            report.put("requests", requestAttribution.summary(20));
         }
         report.put("suggestions", suggestions);
         return report;
@@ -466,6 +511,7 @@ public class DedeApplication {
         log.info("  --fail-on <level>   Exit with code 1 on any finding at <level> or above: CRITICAL, HIGH, MEDIUM, LOW, INFO");
         log.info("  --runtime-traces <otlp.json>  Join OpenTelemetry traces (Collector file exporter) to the graph; ranks findings by runtime calls");
         log.info("  --emit-otel-config <path>     Write an OpenTelemetry Java agent config that instruments the classes that matter");
+        log.info("  --request-log <path>          AEM request.log or access.log: attribute requests to servlets, pages, components and models");
         log.info("  --otel-max-classes <n>        Class cap for --emit-otel-config (default 50)");
         log.info("  --otel-config <path>          With --runtime-traces: the agent config used, to report instrumented-but-never-called classes");
         log.info("  --extended-checks   Also run content-package (OakPal; needs 'mvn package' first), legacy-path and service-user checks");

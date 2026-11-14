@@ -62,6 +62,7 @@ public final class RuntimeOverlay {
     private final Map<String, ClassStats> matched;      // graph node id -> stats
     private final Map<String, ClassStats> unmatched;    // class name -> stats (not in the scanned code)
     private final Map<Path, List<String>> nodeIdsByFile;
+    private List<RequestLogReader.RequestRecord> serverRequests = List.of();
     private final int totalSpans;
     private final int unattributedSpans;
     private final long windowStartNanos;
@@ -121,8 +122,12 @@ public final class RuntimeOverlay {
             }
         }
 
-        return new RuntimeOverlay(matched, unmatched, byFile, spans.size(), unattributed,
+        RuntimeOverlay overlay = new RuntimeOverlay(matched, unmatched, byFile, spans.size(), unattributed,
             windowStart == Long.MAX_VALUE ? 0 : windowStart, windowEnd);
+        overlay.serverRequests = spans.stream().filter(s -> s.httpPath() != null)
+            .map(s -> new RequestLogReader.RequestRecord(null, s.httpPath(), s.httpStatus(), s.durationNanos() / 1_000_000))
+            .toList();
+        return overlay;
     }
 
     /**
@@ -217,6 +222,11 @@ public final class RuntimeOverlay {
         double minutes = hours * 60;
         if (minutes >= 1) return String.format(java.util.Locale.ROOT, "%.0f min", minutes);
         return String.format(java.util.Locale.ROOT, "%.0f s", minutes * 60);
+    }
+
+    /** HTTP server spans as requests, for {@link RequestAttribution}. */
+    public List<RequestLogReader.RequestRecord> serverRequests() {
+        return serverRequests;
     }
 
     public int totalSpans() { return totalSpans; }

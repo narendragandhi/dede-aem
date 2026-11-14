@@ -30,9 +30,16 @@ import java.util.List;
  */
 public final class OtlpTraceReader {
 
-    /** One span reduced to what the overlay needs. {@code className} is null when unattributed. */
+    /**
+     * One span reduced to what the overlay needs. {@code className} is null when unattributed.
+     * {@code httpPath} is set on HTTP server spans only (the request path, no query string).
+     */
     public record SpanRecord(String className, String methodName, long startNanos, long durationNanos,
-                             boolean error) {}
+                             boolean error, String httpPath, int httpStatus) {
+        public SpanRecord(String className, String methodName, long startNanos, long durationNanos, boolean error) {
+            this(className, methodName, startNanos, durationNanos, error, null, 0);
+        }
+    }
 
     private OtlpTraceReader() {}
 
@@ -95,15 +102,30 @@ public final class OtlpTraceReader {
         String namespace = null;
         String function = null;
         String functionName = null;
+        String urlPath = null;
+        String httpTarget = null;
+        int status = 0;
         for (JsonNode attribute : span.path("attributes")) {
             String key = attribute.path("key").asText();
-            String value = attribute.path("value").path("stringValue").asText(null);
+            JsonNode valueNode = attribute.path("value");
+            String value = valueNode.path("stringValue").asText(null);
             switch (key) {
                 case "code.namespace" -> namespace = value;
                 case "code.function" -> function = value;
                 case "code.function.name" -> functionName = value;
+                case "url.path" -> urlPath = value;                       // stable HTTP semconv
+                case "http.target" -> httpTarget = value;                 // older semconv (path?query)
+                case "http.response.status_code", "http.status_code" ->
+                    status = valueNode.path("intValue").asInt(valueNode.path("stringValue").asInt(0));
                 default -> { }
             }
+        }
+        JsonNode kind = span.path("kind");
+        boolean server = kind.asInt(-1) == 2 || "SPAN_KIND_SERVER".equals(kind.asText());
+        String httpPath = null;
+        if (server) {
+            httpPath = urlPath != null ? urlPath : httpTarget;
+            if (httpPath != null && httpPath.indexOf('?') >= 0) httpPath = httpPath.substring(0, httpPath.indexOf('?'));
         }
 
         String className = null;
@@ -122,6 +144,6 @@ public final class OtlpTraceReader {
         long end = span.path("endTimeUnixNano").asLong(0);
         JsonNode statusCode = span.path("status").path("code");
         boolean error = statusCode.asInt(-1) == 2 || "STATUS_CODE_ERROR".equals(statusCode.asText());
-        return new SpanRecord(className, methodName, start, Math.max(0, end - start), error);
+        return new SpanRecord(className, methodName, start, Math.max(0, end - start), error, httpPath, status);
     }
 }

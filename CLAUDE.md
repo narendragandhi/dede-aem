@@ -78,7 +78,9 @@ Run `--help` for the full list (source of truth: `KNOWN_FLAGS` and `printHelp()`
 --compare <file>    Compare with previous snapshot
 ```
 
-Runtime overlay lives in `runtime/` (OtlpTraceReader, RuntimeOverlay, OtelConfigEmitter).
+Runtime overlay lives in `runtime/`: OtlpTraceReader, RuntimeOverlay, OtelConfigEmitter, and
+request attribution (RequestLogReader, ContentIndex, RequestAttribution). Flags: `--runtime-traces`,
+`--emit-otel-config`, `--otel-config`, `--otel-max-classes`, `--request-log`.
 
 Default scan exclusions live in `discovery/ScanExclusions.java`.
 

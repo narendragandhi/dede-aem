@@ -149,7 +149,9 @@ public final class ErrorAttribution {
         return e.exceptionType() != null ? e.exceptionType() + ": " + message : message;
     }
 
-    private static String truncate(String s) {
+    /** Log messages quote request data: credentials and addresses are redacted before a sample is kept. */
+    private static String truncate(String raw) {
+        String s = com.dede.security.SecretRedactor.redact(raw);
         return s.length() > MESSAGE_LIMIT ? s.substring(0, MESSAGE_LIMIT) + "..." : s;
     }
 

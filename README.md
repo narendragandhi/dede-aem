@@ -265,6 +265,11 @@ claude mcp add dede -- java -jar /path/to/dede.jar /path/to/aem-project --reques
 
 The scan is fixed for the life of the server; restart it to rescan.
 
+Tool results are mostly text from the scanned project and its logs, which an attacker can write.
+Every tool is read-only, results are labelled as untrusted, hidden characters are stripped, and
+credentials and email addresses are redacted. This reduces prompt injection and leaks; it does not
+make them impossible. See [the MCP server and the OWASP LLM Top 10](docs/llm-security.md).
+
 **Verified on a running AEM** (AEM SDK author, OpenTelemetry Java agent 2.10.0, Adobe's WKND):
 dede's generated config instrumented WKND's Sling Models inside their OSGi bundle, and
 request attribution from AEM's `request.log` matched the trace ground truth (trace ID -> URL ->

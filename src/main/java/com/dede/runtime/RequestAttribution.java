@@ -39,6 +39,9 @@ public final class RequestAttribution {
     private final Map<String, Long> rendersByResourceType = new HashMap<>();
     private final Map<String, Long> unattributedByPath = new HashMap<>();
     private final Map<String, Set<String>> classesByResourceType = new TreeMap<>();
+    /** Resource type -> its sling:resourceSuperType (project components only). */
+    private final Map<String, String> superTypeOf = new HashMap<>();
+    private static final int MAX_SUPERTYPE_DEPTH = 10;
 
     private RequestAttribution(int total) {
         this.total = total;
@@ -84,6 +87,11 @@ public final class RequestAttribution {
                 }
             } else if (id.startsWith("resType:") || id.startsWith("res:")) {
                 String resourceType = node.getName();
+                for (CodeNode parent : graph.getRelatedNodes(node, RelationshipType.EXTENDS)) {
+                    if (parent.getType() == node.getType()) result.superTypeOf.putIfAbsent(resourceType, parent.getName());
+                }
+                String declaredSuper = node.getProperties().get("sling:resourceSuperType");
+                if (declaredSuper != null) result.superTypeOf.putIfAbsent(resourceType, declaredSuper);
                 Set<String> bound = result.classesByResourceType.computeIfAbsent(resourceType, k -> new LinkedHashSet<>());
                 // @Model(resourceType=...) -> INSTANTIATED_BY
                 for (CodeNode cls : graph.getInboundRelatedNodes(node, RelationshipType.INSTANTIATED_BY)) {
@@ -116,6 +124,16 @@ public final class RequestAttribution {
         for (RequestRecord request : requests) {
             String path = request.path();
             SlingUrl url = SlingUrl.parse(path);
+            // A vanity URL (/promo, /promo.html) renders the page that declares it.
+            String vanityPage = content.pageForVanityPath(url.resourcePath());
+            if (vanityPage != null && content.resourceTypesFor(url.resourcePath()).isEmpty()) {
+                url = new SlingUrl(vanityPage, url.selectors(), url.extension() != null ? url.extension() : "html");
+            }
+            // A shortened URL (/us/en.html for /content/site/us/en) when it maps to exactly one page.
+            String fullPage = vanityPage == null ? content.pageForShortenedPath(url.resourcePath()) : null;
+            if (fullPage != null && content.resourceTypesFor(url.resourcePath()).isEmpty()) {
+                url = new SlingUrl(fullPage, url.selectors(), url.extension());
+            }
             Set<String> classes = new LinkedHashSet<>();
             for (PathServlet ps : pathServlets) {
                 if (path.equals(ps.path()) || path.startsWith(ps.path() + ".") || path.startsWith(ps.path() + "/")) {
@@ -129,7 +147,7 @@ public final class RequestAttribution {
             String primaryType = content.primaryResourceType(url.resourcePath());
             Set<String> handledBy = new LinkedHashSet<>();
             if (primaryType != null) {
-                for (String servlet : resourceTypeServlets.getOrDefault(primaryType, Set.of())) {
+                for (String servlet : result.servletsFor(primaryType, resourceTypeServlets)) {
                     if (registrations.get(servlet).accepts(url)) handledBy.add(servlet);
                 }
             }
@@ -138,8 +156,8 @@ public final class RequestAttribution {
             } else {
                 for (String resourceType : content.resourceTypesFor(url.resourcePath())) {
                     result.rendersByResourceType.merge(resourceType, 1L, Long::sum);
-                    Set<String> servlets = resourceTypeServlets.getOrDefault(resourceType, Set.of());
-                    for (String cls : result.classesByResourceType.getOrDefault(resourceType, Set.of())) {
+                    Set<String> servlets = result.servletsFor(resourceType, resourceTypeServlets);
+                    for (String cls : result.classesFor(resourceType)) {
                         // Servlets only ever serve requests matching their registration.
                         if (!servlets.contains(cls)) classes.add(cls);
                     }
@@ -206,6 +224,35 @@ public final class RequestAttribution {
         return new Registration(selectors, extensions);
     }
 
+    /** {@code type}, then its supertypes, nearest first. */
+    List<String> superTypeChain(String type) {
+        List<String> chain = new ArrayList<>();
+        for (String t = type; t != null && chain.size() < MAX_SUPERTYPE_DEPTH && !chain.contains(t); t = superTypeOf.get(t)) {
+            chain.add(t);
+        }
+        return chain;
+    }
+
+    /**
+     * Project classes that run when {@code type} renders: its own, or -- for a component with no
+     * script or model of its own -- those of the nearest supertype that has some. Sling falls back
+     * to the supertype's script, and the Sling Models implementation picker walks supertypes too.
+     */
+    Set<String> classesFor(String type) {
+        for (String t : superTypeChain(type)) {
+            Set<String> classes = classesByResourceType.get(t);
+            if (classes != null) return classes;
+        }
+        return Set.of();
+    }
+
+    /** Servlets registered for {@code type} or any supertype: Sling servlet resolution walks them. */
+    private Set<String> servletsFor(String type, Map<String, Set<String>> resourceTypeServlets) {
+        Set<String> servlets = new LinkedHashSet<>();
+        for (String t : superTypeChain(type)) servlets.addAll(resourceTypeServlets.getOrDefault(t, Set.of()));
+        return servlets;
+    }
+
     /**
      * The resource path of a Sling request URL: everything before the first dot of the last
      * segment that has one ({@code /content/a/b.teaser.html/suffix} -> {@code /content/a/b}).
@@ -228,7 +275,10 @@ public final class RequestAttribution {
 
     /** Resource types bound to project models/servlets that no request rendered in the window. */
     public List<String> resourceTypesNeverRendered() {
-        return classesByResourceType.keySet().stream().filter(rt -> !rendersByResourceType.containsKey(rt)).toList();
+        // A supertype renders whenever a subtype that inherits from it does.
+        Set<String> rendered = new java.util.HashSet<>();
+        rendersByResourceType.keySet().forEach(t -> rendered.addAll(superTypeChain(t)));
+        return classesByResourceType.keySet().stream().filter(rt -> !rendered.contains(rt)).toList();
     }
 
     private static List<Map.Entry<String, Long>> top(Map<String, Long> counts, int limit) {

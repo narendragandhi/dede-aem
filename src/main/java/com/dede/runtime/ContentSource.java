@@ -68,7 +68,7 @@ public final class ContentSource {
     public static String queryString(String path, int offset, int limit) {
         return "path=" + encode(path)
             + "&property=sling:resourceType&property.operation=exists"
-            + "&p.hits=selective&p.properties=" + encode("jcr:path sling:resourceType cq:template fragmentVariationPath")
+            + "&p.hits=selective&p.properties=" + encode("jcr:path sling:resourceType cq:template fragmentVariationPath sling:vanityPath")
             + "&p.offset=" + offset + "&p.limit=" + limit + "&p.guessTotal=true";
     }
 

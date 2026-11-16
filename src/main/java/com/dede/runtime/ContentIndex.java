@@ -13,6 +13,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Stream;
@@ -42,6 +43,8 @@ public final class ContentIndex {
     /** Page path -> paths it pulls in at render time (template structure, experience fragments). */
     private final Map<String, Set<String>> includesByPage = new HashMap<>();
     private static final int MAX_INCLUDE_DEPTH = 5;
+    /** sling:vanityPath -> the page that declares it. */
+    private final Map<String, String> pageByVanityPath = new HashMap<>();
 
     public static ContentIndex build(Path projectRoot) {
         ContentIndex index = new ContentIndex();
@@ -130,9 +133,46 @@ public final class ContentIndex {
             if (fragment.startsWith("/content/")) {
                 includesByPage.computeIfAbsent(page, k -> new LinkedHashSet<>()).add(fragment);
             }
+            var vanity = hit.path("sling:vanityPath");
+            if (vanity.isArray()) vanity.forEach(v -> addVanity(v.asText(""), path));
+            else addVanity(vanity.asText(""), path);
         }
         lookups.clear();
         return added;
+    }
+
+    /** Vanity paths are multi-valued in JCR; docview writes them as "[/a,/b]". */
+    private void addVanity(String raw, String nodePath) {
+        if (raw == null || raw.isBlank()) return;
+        String page = pageOf(nodePath);
+        String values = raw.startsWith("[") && raw.endsWith("]") ? raw.substring(1, raw.length() - 1) : raw;
+        for (String vanity : values.split(",")) {
+            String v = vanity.strip();
+            if (v.isEmpty()) continue;
+            pageByVanityPath.putIfAbsent(v.startsWith("/") ? v : "/" + v, page);
+        }
+    }
+
+    private final Map<String, java.util.Optional<String>> shortened = new HashMap<>();
+
+    /**
+     * The page a shortened URL path maps to -- {@code /us/en} for {@code /content/site/us/en}, as
+     * {@code /etc/map} or resource resolver mappings commonly publish it -- when exactly one indexed
+     * page ends with it. Null when none or several do (two sites with the same structure): a guess
+     * would attribute traffic to the wrong site.
+     */
+    public String pageForShortenedPath(String path) {
+        if (path.startsWith("/content/") || path.startsWith("/conf/") || path.length() < 2) return null;
+        return shortened.computeIfAbsent(path, p -> {
+            List<String> matches = resourceTypesByPage.keySet().stream()
+                .filter(page -> page.startsWith("/content/") && page.endsWith(p)).limit(2).toList();
+            return matches.size() == 1 ? java.util.Optional.of(matches.get(0)) : java.util.Optional.empty();
+        }).orElse(null);
+    }
+
+    /** The page a vanity path ({@code /promo}) points to, or null. */
+    public String pageForVanityPath(String path) {
+        return pageByVanityPath.get(path);
     }
 
     /** The page a node belongs to: the path before {@code /jcr:content}, or the node itself. */
@@ -178,6 +218,7 @@ public final class ContentIndex {
         if (fragment.startsWith("/content/")) {
             includes.add(fragment);
         }
+        addVanity(element.getAttribute("sling:vanityPath"), nodePath);
         for (Node child = element.getFirstChild(); child != null; child = child.getNextSibling()) {
             if (child instanceof Element childElement) {
                 walk(childElement, nodePath + "/" + childElement.getTagName(), onPage, includes);

@@ -198,6 +198,12 @@ window only proves the code didn't run in that window.
   page, then to the Sling Models (`@Model(resourceType)` or HTL `data-sly-use`) and
   `@SlingServletResourceTypes` servlets bound to them -- honoring the servlet's selectors and
   extensions, and counting a page as rendered only when no servlet took the request.
+- following Sling's resource supertypes: a component with no script or model of its own renders
+  through its nearest project supertype, and servlets registered on a supertype also serve its
+  subtypes;
+- resolving vanity URLs (`sling:vanityPath`) to their page, and shortened URLs (`/us/en.html` for
+  `/content/site/us/en`, as `/etc/map` publishes them) when exactly one page matches -- with two
+  sites of the same structure the request stays unattributed rather than guessed.
 
 The JSON report gets a `requests` block (requests per class, renders per resource type,
 resource types with project code that never rendered, top unattributed paths) and class nodes

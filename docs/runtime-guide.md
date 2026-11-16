@@ -101,3 +101,18 @@ Everything above is also written onto the graph (REST, GraphQL, snapshots, MCP) 
 properties: `runtime.calls`, `runtime.errors`, `runtime.avgMs`, `runtime.maxMs` (traces),
 `runtime.requests` (classes), `runtime.renders` (resource types), `runtime.logErrors`,
 `runtime.logWarnings` (error.log).
+
+## Blast radius export
+
+```bash
+dede ./project --request-log request.log --content site.zip \
+     --blast-radius BylineImpl --blast-radius HelloWorldModel --blast-radius-dir out/
+```
+
+Writes `out/blast-radius-<name>.json`: everything that depends on the class, by hop, then the
+pages that render the affected components and the requests each received. "Depends on" follows
+each relationship's real direction -- a model's resource type depends on the model, an
+implementation's callers come through its interface; the containing package and the types a
+model adapts from are not dependents. On WKND: `ImageListImpl` → 12 pages, 23 requests (home 11,
+adventures 6, magazine 6, matching the traces); `BylineImpl` → 21 pages, only one with traffic;
+`HelloWorldModel` → no pages. Files are relative to the project; no absolute paths are written.

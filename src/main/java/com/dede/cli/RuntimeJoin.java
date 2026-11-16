@@ -34,7 +34,8 @@ public final class RuntimeJoin {
     public record RuntimeData(RuntimeOverlay traces,
                               List<Map<String, Object>> instrumentedNotCalled,
                               RequestAttribution requests,
-                              ErrorAttribution errors) {
+                              ErrorAttribution errors,
+                              ContentIndex content) {
         public boolean hasTraffic() { return traces != null || requests != null; }
     }
 
@@ -62,7 +63,11 @@ public final class RuntimeJoin {
             logTraces(traces, instrumentedNotCalled, findings);
         }
 
-        RequestAttribution requests = attributeRequests(o, traces, graph);
+        ContentIndex[] content = new ContentIndex[1];
+        RequestAttribution requests = attributeRequests(o, traces, graph, content);
+        if (content[0] == null && !o.blastRadius().isEmpty()) {
+            content[0] = loadContent(o);   // the blast radius' page layer needs pages even without requests
+        }
         ErrorAttribution errors = null;
         if (o.errorLogPath() != null) {
             try {
@@ -72,12 +77,12 @@ public final class RuntimeJoin {
             }
             logErrors(errors, findings);
         }
-        return new RuntimeData(traces, instrumentedNotCalled, requests, errors);
+        return new RuntimeData(traces, instrumentedNotCalled, requests, errors, content[0]);
     }
 
     /** HTTP server spans and/or AEM request.log/access.log -> project code. */
-    private static RequestAttribution attributeRequests(CliOptions o, RuntimeOverlay traces, GraphService graph)
-            throws StageFailure {
+    private static RequestAttribution attributeRequests(CliOptions o, RuntimeOverlay traces, GraphService graph,
+                                                        ContentIndex[] contentOut) throws StageFailure {
         List<RequestLogReader.RequestRecord> records = new ArrayList<>();
         if (traces != null && o.requestLogPath() == null) {
             records.addAll(traces.serverRequests());
@@ -94,20 +99,13 @@ public final class RuntimeJoin {
             }
         }
         if (records.isEmpty()) {
-            if (!o.contentSources().isEmpty()) {
+            if (!o.contentSources().isEmpty() && o.blastRadius().isEmpty()) {
                 log.warn("--content is only used to attribute requests: add --request-log (or traces with HTTP server spans).");
             }
             return null;
         }
-        ContentIndex content = ContentIndex.build(Path.of(o.projectPath()));
-        for (String source : o.contentSources()) {
-            try {
-                log.info("Content: {} node(s)/document(s) added from {}", ContentSource.addTo(content, source), source);
-            } catch (IOException | RuntimeException e) {
-                // Attribution without the site's pages silently undercounts: stop instead.
-                throw new StageFailure("Failed to read content from " + source + ": " + e.getMessage());
-            }
-        }
+        ContentIndex content = loadContent(o);
+        contentOut[0] = content;
         RequestAttribution requests = RequestAttribution.apply(records, content, graph);
         log.info("Requests: {} total, {} attributed to project code ({} content page(s) indexed)",
             requests.total(), requests.attributed(), content.pageCount());
@@ -118,6 +116,20 @@ public final class RuntimeJoin {
             log.info("Resource types with project models/servlets never rendered: {}", neverRendered.size());
         }
         return requests;
+    }
+
+    /** The project's content plus every --content source. */
+    private static ContentIndex loadContent(CliOptions o) throws StageFailure {
+        ContentIndex content = ContentIndex.build(Path.of(o.projectPath()));
+        for (String source : o.contentSources()) {
+            try {
+                log.info("Content: {} node(s)/document(s) added from {}", ContentSource.addTo(content, source), source);
+            } catch (IOException | RuntimeException e) {
+                // Attribution without the site's pages silently undercounts: stop instead.
+                throw new StageFailure("Failed to read content from " + source + ": " + e.getMessage());
+            }
+        }
+        return content;
     }
 
     private static void logTraces(RuntimeOverlay traces, List<Map<String, Object>> instrumentedNotCalled,

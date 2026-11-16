@@ -250,18 +250,11 @@ public final class DedeTools {
 
     /** A node by id, by fully qualified class name, or by simple class name when unambiguous. */
     CodeNode resolve(String name) {
-        var exact = graph.findNodeById(name).or(() -> graph.findNodeById("class:" + name));
-        if (exact.isPresent()) return exact.get();
-        List<CodeNode> bySimpleName = graph.getAllNodes().stream()
-            .filter(n -> n.getId().startsWith("class:") && (n.getId().endsWith("." + name) || n.getId().equals("class:" + name)))
-            .sorted(Comparator.comparing(CodeNode::getId))
-            .toList();
-        if (bySimpleName.size() == 1) return bySimpleName.get(0);
-        if (bySimpleName.isEmpty()) {
-            throw new McpServer.ToolError("No node or class named '" + name + "'. Try the search tool.");
+        try {
+            return com.dede.domain.NodeNames.resolve(graph, name);
+        } catch (IllegalArgumentException e) {
+            throw new McpServer.ToolError(e.getMessage() + (e.getMessage().startsWith("No node") ? " Try the search tool." : ""));
         }
-        throw new McpServer.ToolError("'" + name + "' is ambiguous: "
-            + bySimpleName.stream().map(CodeNode::getId).toList() + ". Use the fully qualified name.");
     }
 
     private static long traffic(CodeNode n) {

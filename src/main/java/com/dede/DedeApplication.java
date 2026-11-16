@@ -20,6 +20,7 @@ import com.dede.runtime.OtelConfigEmitter;
 import com.dede.runtime.RuntimeOverlay;
 import com.dede.mcp.DedeTools;
 import com.dede.mcp.McpServer;
+import com.dede.runtime.BlastRadiusExport;
 import com.dede.runtime.ErrorAttribution;
 import com.dede.runtime.RequestAttribution;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -193,6 +194,9 @@ public class DedeApplication {
         if (o.otelConfigPath() != null) {
             writeOtelConfig(o, graphService, findings);
         }
+        for (String name : o.blastRadius()) {
+            writeBlastRadius(o, name, graphService, runtime, findings);
+        }
         if (o.sarifOutputPath() != null) {
             writeJson(o.sarifOutputPath(), new SarifReport(findings.forbiddenApis().violations(), scanRoot).toSarif(),
                 "SARIF report", false);
@@ -261,6 +265,29 @@ public class DedeApplication {
         } catch (IOException e) {
             throw new RuntimeJoin.StageFailure("Failed to write OpenTelemetry config to " + o.otelConfigPath() + ": " + e.getMessage());
         }
+    }
+
+    private static void writeBlastRadius(CliOptions o, String name, GraphService graphService,
+                                         RuntimeJoin.RuntimeData runtime, CloudFindings findings)
+            throws RuntimeJoin.StageFailure {
+        Map<String, Object> export;
+        try {
+            export = BlastRadiusExport.build(name, graphService, runtime.content(), runtime.requests(), findings.all(),
+                Path.of(o.projectPath()));
+        } catch (IllegalArgumentException e) {
+            throw new RuntimeJoin.StageFailure("--blast-radius " + name + ": " + e.getMessage());
+        }
+        @SuppressWarnings("unchecked") Map<String, Object> summary = (Map<String, Object>) export.get("summary");
+        log.info("Blast radius of {}: {} dependent(s) over {} hop(s), {} resource type(s), {} page(s), {} observed request(s), {} finding(s)",
+            name, summary.get("dependents"), summary.get("maxHop"), summary.get("resourceTypes"), summary.get("pages"),
+            summary.get("observedRequests") == null ? "no" : summary.get("observedRequests"), summary.get("findings"));
+        String fileName = ((Map<?, ?>) export.get("root")).get("name").toString().replaceAll("[^A-Za-z0-9._-]", "_");
+        try {
+            java.nio.file.Files.createDirectories(Path.of(o.blastRadiusDir()));
+        } catch (IOException e) {
+            throw new RuntimeJoin.StageFailure("Cannot create " + o.blastRadiusDir() + ": " + e.getMessage());
+        }
+        writeJson(Path.of(o.blastRadiusDir(), "blast-radius-" + fileName + ".json").toString(), export, "blast radius", true);
     }
 
     /** Writes {@code value} as indented JSON; a {@code required} output that fails stops the scan. */
@@ -382,6 +409,8 @@ public class DedeApplication {
         log.info("  --emit-otel-config <path>     Write an OpenTelemetry Java agent config that instruments the classes that matter");
         log.info("  --request-log <path>          AEM request.log or access.log: attribute requests to servlets, pages, components and models");
         log.info("  --content <zip|json|url>      With --request-log: the site's authored pages (content package, saved QueryBuilder JSON, or live AEM URL)");
+        log.info("  --blast-radius <class>        Export what depends on <class> -- code, components, pages, traffic -- as JSON (repeatable)");
+        log.info("  --blast-radius-dir <dir>      Where --blast-radius writes blast-radius-<name>.json (default: current directory)");
         log.info("  --error-log <path>            AEM error.log: tie WARN/ERROR entries to project classes and their findings");
         log.info("  --mcp                         After the scan, serve it to AI agents as an MCP server on stdio (logs go to stderr)");
         log.info("  --otel-max-classes <n>        Class cap for --emit-otel-config (default 50)");

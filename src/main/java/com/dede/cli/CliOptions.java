@@ -37,6 +37,8 @@ public record CliOptions(
     String errorLogPath,
     boolean mcp,
     boolean watch,
+    List<String> blastRadius,
+    String blastRadiusDir,
     List<String> unknownFlags) {
 
     /** A command line that can't run as given. */
@@ -47,7 +49,8 @@ public record CliOptions(
     private static final Set<String> VALUE_FLAGS = Set.of(
         "--profiles", "--rules", "--dot", "--analyze", "--dependency-check-report", "--snapshot", "--compare",
         "--bpa-report", "--sarif", "--suggestions", "--json", "--fail-on", "--runtime-traces",
-        "--emit-otel-config", "--otel-config", "--otel-max-classes", "--request-log", "--content", "--error-log");
+        "--emit-otel-config", "--otel-config", "--otel-max-classes", "--request-log", "--content", "--error-log",
+        "--blast-radius", "--blast-radius-dir");
     private static final Set<String> SWITCHES = Set.of(
         "--security", "--cloud-readiness", "--fail-on-critical", "--extended-checks", "--mcp", "--watch");
 
@@ -64,7 +67,7 @@ public record CliOptions(
     /** True when the scan needs the findings (gates, reports, runtime joins, MCP). */
     public boolean needsFindings() {
         return sarifOutputPath != null || jsonOutputPath != null || failOn != null || runtimeTracesPath != null
-            || otelConfigPath != null || errorLogPath != null || mcp;
+            || otelConfigPath != null || errorLogPath != null || mcp || !blastRadius.isEmpty();
     }
 
     /** {@code args[0]} is the project path; the rest are options. */
@@ -79,6 +82,8 @@ public record CliOptions(
         int otelMaxClasses = 50;
         boolean security = false, cloudReadiness = false, extended = false, mcp = false, watch = false;
         List<String> content = new ArrayList<>();
+        List<String> blastRadius = new ArrayList<>();
+        String blastRadiusDir = ".";
         List<String> unknown = new ArrayList<>();
 
         for (int i = 1; i < args.length; i++) {
@@ -108,6 +113,8 @@ public record CliOptions(
                 case "--request-log" -> requestLog = value;
                 case "--content" -> content.add(value);
                 case "--error-log" -> errorLog = value;
+                case "--blast-radius" -> blastRadius.add(value);
+                case "--blast-radius-dir" -> blastRadiusDir = value;
                 case "--fail-on" -> {
                     try {
                         failOn = CloudFindings.parseThreshold(value);
@@ -143,6 +150,7 @@ public record CliOptions(
         }
         return new CliOptions(args[0], profiles, rules, dot, analyze, security, dependencyCheck, snapshot, compare,
             cloudReadiness, bpa, sarif, suggestions, json, failOn, extended, traces, emitOtel, otelConfig,
-            otelMaxClasses, requestLog, List.copyOf(content), errorLog, mcp, watch, List.copyOf(unknown));
+            otelMaxClasses, requestLog, List.copyOf(content), errorLog, mcp, watch, List.copyOf(blastRadius), blastRadiusDir,
+            List.copyOf(unknown));
     }
 }

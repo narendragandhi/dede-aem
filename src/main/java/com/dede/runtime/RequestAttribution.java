@@ -40,6 +40,8 @@ public final class RequestAttribution {
     private final Map<String, Long> requestsByClass = new HashMap<>();       // class signature -> requests
     private final Map<String, Long> rendersByResourceType = new HashMap<>();
     private final Map<String, Long> unattributedByPath = new HashMap<>();
+    /** Resolved resource path (after vanity/shortened-URL resolution) -> requests. */
+    private final Map<String, Long> requestsByResource = new HashMap<>();
     private final Map<String, Set<String>> classesByResourceType = new TreeMap<>();
     /** Resource type -> its sling:resourceSuperType (project components only). */
     private final Map<String, String> superTypeOf = new HashMap<>();
@@ -165,6 +167,7 @@ public final class RequestAttribution {
                     }
                 }
             }
+            result.requestsByResource.merge(url.resourcePath(), 1L, Long::sum);
             if (classes.isEmpty()) {
                 result.unattributedByPath.merge(path, 1L, Long::sum);
             } else {
@@ -272,6 +275,8 @@ public final class RequestAttribution {
     }
 
     public int total() { return total; }
+    /** Requests whose resource resolved to {@code resourcePath} (a page, after vanity URLs), or 0. */
+    public long requestsForResource(String resourcePath) { return requestsByResource.getOrDefault(resourcePath, 0L); }
     public int attributed() { return attributed; }
     public Long requestsFor(String classSignature) { return requestsByClass.get(classSignature); }
 

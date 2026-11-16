@@ -270,6 +270,18 @@ public final class ContentIndex {
         return pageContent != null ? pageContent : resourceTypeByNode.get(resourcePath);
     }
 
+    /**
+     * Pages under {@code /content} that render {@code resourceType}: directly, through their
+     * template structure, or through an embedded experience fragment. Sorted.
+     */
+    public List<String> pagesUsing(String resourceType) {
+        return resourceTypesByPage.keySet().stream()
+            .filter(page -> page.startsWith("/content/") && !page.startsWith("/content/experience-fragments/"))
+            .filter(page -> resourceTypesFor(page).contains(resourceType))
+            .sorted()
+            .toList();
+    }
+
     public int pageCount() {
         return resourceTypesByPage.size();
     }

@@ -12,11 +12,16 @@ See the [AEM Intelligence Workspace architecture and value summary](../aem-openw
 for how Dede integrates with OpenWiki and the Recipe Engine while remaining
 standalone.
 
-A static analysis tool for validating AEM codebase compatibility with AEM as a Cloud Service and visualizing component dependencies.
+Finds the AEM code that could break on AEM as a Cloud Service -- then uses traces and AEM's own
+logs to show which of it actually runs, which requests it serves, and which of it fails.
+
+**See it:** [Showcase](docs/showcase.md) · [Demo videos](docs/videos/README.md) ·
+[Getting started](docs/getting-started.md) · [Runtime guide](docs/runtime-guide.md) ·
+[Limitations](docs/LIMITATIONS.md)
 
 [![Java Version](https://img.shields.io/badge/Java-21-blue)](https://openjdk.org/projects/jdk/21/)
 [![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.2.0-green)](https://spring.io/projects/spring-boot)
-[![Tests](https://img.shields.io/badge/Tests-293%20passing-brightgreen)]()
+[![Tests](https://img.shields.io/badge/Tests-357%20passing-brightgreen)]()
 [![Docker](https://img.shields.io/badge/ghcr.io-dede--java-blue)](https://github.com/features/packages)
 
 ---

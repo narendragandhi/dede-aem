@@ -4,11 +4,26 @@ This document describes known limitations, false positive scenarios, and areas f
 
 ## Static Analysis Limitations
 
-### 1. No Runtime Context
-Dede-Java performs static analysis only. It cannot:
-- Verify actual OSGi bundle wiring at runtime
-- Check if services are actually registered/available
-- Validate content that exists only in the repository (not source)
+### 1. Runtime Context Is Only What You Give It
+Without runtime inputs, dede is static analysis. With them (see [runtime-guide.md](runtime-guide.md))
+it knows calls, requests and errors, but still cannot:
+- Verify actual OSGi bundle wiring or which services are registered at runtime
+- See requests the dispatcher or CDN served from cache: request counts on publish are cache
+  misses, not page views
+- Attribute requests for pages it has no content for: pages authored in AEM need `--content`
+- Attribute work done by product code (Core Components, AEM itself): only project classes are
+  matched
+- Prove code is dead beyond the trace window: "instrumented but never called" covers that window
+  only, and only for classes the agent config instrumented
+
+### 1a. Runtime Input Limits
+- Live `--content` uses QueryBuilder with a property-exists constraint; on very large
+  repositories it can hit query limits. Export a content package instead.
+- Shortened URLs (via `/etc/map`) are resolved only when exactly one page matches; multi-site
+  projects with identical structures leave them unattributed.
+- Findings without a line number (some graph checks) fall back to class-level call counts.
+- CVEs are linked to code through OSGi bundles from built manifests: scan after `mvn package`.
+- Snapshot comparisons use raw counts; compare trace/log windows of similar length.
 
 ### 2. Dispatcher Include Directives
 The dispatcher parser does not follow `$include` directives. This may cause false positives like:

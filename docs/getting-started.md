@@ -1,51 +1,81 @@
-# Getting Started with dede-java
+# Getting Started
 
-This guide will walk you through setting up `dede-java` for high-performance dependency exploration.
+Five minutes from clone to a ranked list of AEM findings. Every command here was run on Adobe's
+[WKND](https://github.com/adobe/aem-guides-wknd) sample; the numbers are what it printed.
 
-## 🛠️ Prerequisites
-- **Java 21** (Required for Virtual Thread and Record support)
-- **Maven 3.9+**
-- **Ollama** (Optional, for Agentic features)
+## Prerequisites
 
-## 📦 Installation & Build
+- Java 21 and Maven 3.9
+- An AEM project checkout (any Maven AEM archetype project)
+- Optional, for runtime evidence: AEM's `request.log` / `error.log`, or an AEM SDK you can start
+  with the [OpenTelemetry Java agent](https://github.com/open-telemetry/opentelemetry-java-instrumentation)
 
-1. Clone the repository.
-2. Build the executable JAR:
+## Build
+
 ```bash
-mvn clean package
+mvn clean package -DskipTests
+alias dede='java -jar target/dede-java-0.0.1-SNAPSHOT-exec.jar'
 ```
 
-## 🔍 Scanning Your Codebase
+## 1. Static scan
 
-### Standard Local Scan
-To scan a standard Maven project or a directory of Java files:
 ```bash
-java -jar target/dede-java-0.0.1-SNAPSHOT.jar /path/to/project
+dede ./aem-guides-wknd --json report.json
 ```
 
-### OSGi / Hybrid Scan
-If you have a project with 1000+ bundles (e.g., an AEM environment), ensure the platform JARs are in a directory within your scan path. `dede-java` will:
-1. Parse your local source code.
-2. Index the external JARs using the **Metadata Cache**.
-3. Link them via `WIRES_TO` relationships.
+`report.json` holds every finding (Cloud Service readiness, forbidden APIs, graph checks) with
+severity, file, line and message. WKND: one MEDIUM, score 90%.
 
-### The Metadata Cache
-On the first run, a `.dede-cache.json` file is created. This file stores the OSGi metadata of all scanned JARs. Subsequent runs will skip parsing these JARs unless they have changed (validated by file size and timestamp), resulting in near-instant scans for massive platforms.
+Gate a build on it:
 
-## 🤖 Using the Agent (Impact Analysis)
-
-`dede-java` integrates with **Embabel** and **Ollama** to provide a conversational interface to your code graph.
-
-1. **Start Ollama**: `ollama serve`
-2. **Pull a Model**: `ollama pull mistral`
-3. **Run a Query**:
 ```bash
-java -jar target/dede-java-0.0.1-SNAPSHOT.jar . --ask "Who consumes the UserProfileService OSGi service?"
+dede ./my-project --fail-on HIGH        # exit 1 on any HIGH or CRITICAL finding
 ```
 
-## 📂 Project Structure
-- `src/main/java/com/dede/core`: Graph engine and Caching logic.
-- `src/main/java/com/dede/analysis`: Specialized parsers (Java, Manifest, DS).
-- `src/main/java/com/dede/cli`: Spring Boot command-line entry point.
-- `docs/adr`: Architectural Decision Records.
-- `docs/stories`: Implementation task logs (Beads).
+Or in Maven, with the `dede-maven-plugin` and `-Ddede.failOnSeverity=HIGH`.
+
+## 2. Add what actually runs (no agent needed)
+
+Download AEM's logs (Cloud Manager → Environments → Download Logs, or `crx-quickstart/logs`
+locally) and join them:
+
+```bash
+dede ./aem-guides-wknd --request-log request.log --error-log error.log --json report.json
+```
+
+Requests are mapped to the servlets, components and Sling Models that served them; error.log
+entries to the project classes they came from. WKND: 35 requests, 32 attributed --
+`ImageListImpl` 23, `BylineImpl` 9.
+
+If your pages are authored in AEM (they usually are), add the site's content:
+
+```bash
+dede ./my-project --request-log request.log --content my-site-content.zip
+```
+
+## 3. Add traces (method-level evidence)
+
+```bash
+dede ./my-project --emit-otel-config otel.properties      # the graph picks what to instrument
+# start AEM with:  -javaagent:opentelemetry-javaagent.jar -Dotel.javaagent.configuration-file=otel.properties
+#                  -Dotel.traces.exporter=logging-otlp   (or send to a Collector)
+dede ./my-project --runtime-traces spans.log --otel-config otel.properties --json report.json
+```
+
+Each finding gets `runtimeCalls` (and `runtimeMethodCalls` when it sits in a method); classes that
+were instrumented but never called are listed with a verdict.
+
+## 4. Ask from an AI agent
+
+```bash
+claude mcp add dede -- java -jar /path/to/dede.jar /path/to/my-project --request-log request.log --mcp
+```
+
+Tools: `summary`, `list_findings`, `class_info`, `impact`, `search`.
+
+## Next
+
+- [Runtime guide](runtime-guide.md): every runtime input, what it adds, and its limits
+- [Showcase](showcase.md): the story, with the evidence
+- [Limitations](LIMITATIONS.md): what dede can't see
+- `dede --help`: every option

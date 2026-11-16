@@ -18,6 +18,8 @@ import com.dede.runtime.OtelConfigEmitter;
 import com.dede.runtime.OtlpTraceReader;
 import com.dede.runtime.RuntimeOverlay;
 import com.dede.runtime.ContentIndex;
+import com.dede.runtime.ErrorAttribution;
+import com.dede.runtime.ErrorLogReader;
 import com.dede.runtime.RequestAttribution;
 import com.dede.runtime.RequestLogReader;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -98,6 +100,7 @@ public class DedeApplication {
             String otelConfigPath = null;
             String instrumentedConfigPath = null;
             String requestLogPath = null;
+            String errorLogPath = null;
             int otelMaxClasses = 50;
             String failOn = null;  // gate threshold; null = no gate
             boolean extendedChecks = false;
@@ -117,6 +120,9 @@ public class DedeApplication {
                 }
                 if ("--request-log".equals(args[i]) && i + 1 < args.length) {
                     requestLogPath = args[i + 1];
+                }
+                if ("--error-log".equals(args[i]) && i + 1 < args.length) {
+                    errorLogPath = args[i + 1];
                 }
                 if ("--otel-config".equals(args[i]) && i + 1 < args.length) {
                     instrumentedConfigPath = args[i + 1];
@@ -271,7 +277,7 @@ public class DedeApplication {
             // JSON report and --fail-on / --fail-on-critical -- the same set the Maven plugin gates on.
             Path scanRoot = Path.of(projectPath);
             boolean needFindings = sarifOutputPath != null || jsonOutputPath != null || failOn != null
-                || runtimeTracesPath != null || otelConfigPath != null;
+                || runtimeTracesPath != null || otelConfigPath != null || errorLogPath != null;
             CloudFindings findings = needFindings ? cloudFindings.collect(scanRoot, extendedChecks) : null;
 
             // Runtime overlay: OpenTelemetry traces joined to the code graph.
@@ -351,6 +357,28 @@ public class DedeApplication {
                 }
             }
 
+            // error.log: WARN/ERROR entries -> the project classes they came from -> their findings.
+            ErrorAttribution errorAttribution = null;
+            if (errorLogPath != null) {
+                try {
+                    errorAttribution = ErrorAttribution.apply(ErrorLogReader.read(Path.of(errorLogPath)), graphService);
+                } catch (IOException e) {
+                    log.error("Failed to read error log {}: {}", errorLogPath, e.getMessage());
+                    System.exit(SpringApplication.exit(context, () -> 2));
+                }
+                log.info("Error log: {} WARN/ERROR entries ({} ERROR), {} attributed to {} project class(es)",
+                    errorAttribution.total(), errorAttribution.errorCount(), errorAttribution.attributed(),
+                    errorAttribution.failingClasses().size());
+                errorAttribution.failingClasses().stream().limit(10).forEach(c ->
+                    log.info("  {} errors, {} warnings  {}", c.errors(), c.warnings(), c.className()));
+                var failing = errorAttribution.findingsInFailingCode(findings.all());
+                if (!failing.isEmpty()) {
+                    log.info("Findings in code that logged errors ({}):", failing.size());
+                    failing.stream().limit(10).forEach(e -> log.info("  {} log entries  {} [{}] {}", e.getValue(),
+                        e.getKey().severity(), e.getKey().category(), e.getKey().file()));
+                }
+            }
+
             if (otelConfigPath != null) {
                 int maxClasses = otelMaxClasses;
                 var selections = OtelConfigEmitter.select(graphService, findings.all(), maxClasses);
@@ -403,7 +431,7 @@ public class DedeApplication {
             if (jsonOutputPath != null) {
                 log.info("Writing JSON report: {}", jsonOutputPath);
                 Map<String, Object> report = buildJsonReport(projectPath, graphService, findings, suggestions, runtime, instrumentedNotCalled,
-                    requestAttribution);
+                    requestAttribution, errorAttribution);
                 ObjectMapper mapper = new ObjectMapper().enable(SerializationFeature.INDENT_OUTPUT);
                 try {
                     mapper.writeValue(new File(jsonOutputPath), report);
@@ -435,13 +463,14 @@ public class DedeApplication {
         "--compare", "--bpa-report", "--sarif", "--suggestions", "--dependency-check-report",
         "--cloud-readiness", "--watch", "--json", "--fail-on-critical", "--fail-on", "--extended-checks",
         "--runtime-traces", "--emit-otel-config", "--otel-config", "--otel-max-classes",
-        "--request-log");
+        "--request-log", "--error-log");
 
     private static Map<String, Object> buildJsonReport(String projectPath, GraphService graphService,
                                                        CloudFindings findings, List<String> suggestions,
                                                        RuntimeOverlay runtime,
                                                        List<Map<String, Object>> instrumentedNotCalled,
-                                                       RequestAttribution requestAttribution) {
+                                                       RequestAttribution requestAttribution,
+                                                       ErrorAttribution errorAttribution) {
         Map<String, Object> graph = new LinkedHashMap<>();
         graph.put("nodes", graphService.getNodeCount());
         graph.put("edges", graphService.getEdgeCount());
@@ -452,7 +481,7 @@ public class DedeApplication {
         report.put("project", projectPath);
         report.put("summary", findings.summary());
         report.put("graph", graph);
-        if (runtime == null) {
+        if (runtime == null && errorAttribution == null) {
             report.put("violations", findings.all());
         } else {
             // Same findings, each with the observed call count of its code (absent = not observed).
@@ -461,11 +490,15 @@ public class DedeApplication {
             for (CloudFindings.Finding f : findings.all()) {
                 @SuppressWarnings("unchecked")
                 Map<String, Object> row = mapper.convertValue(f, LinkedHashMap.class);
-                Long calls = runtime.callsFor(f);
+                Long calls = runtime != null ? runtime.callsFor(f) : null;
                 if (calls != null) row.put("runtimeCalls", calls);
+                Long logEntries = errorAttribution != null ? errorAttribution.entriesFor(f) : null;
+                if (logEntries != null) row.put("logEntries", logEntries);
                 violations.add(row);
             }
             report.put("violations", violations);
+        }
+        if (runtime != null) {
             Map<String, Object> runtimeBlock = runtime.summary(findings.all(), 20);
             if (instrumentedNotCalled != null) {
                 runtimeBlock.put("windowHours", Math.round(runtime.windowHours() * 100) / 100.0);
@@ -475,6 +508,9 @@ public class DedeApplication {
         }
         if (requestAttribution != null) {
             report.put("requests", requestAttribution.summary(20));
+        }
+        if (errorAttribution != null) {
+            report.put("logs", errorAttribution.summary(findings.all(), 20));
         }
         report.put("suggestions", suggestions);
         return report;
@@ -516,6 +552,7 @@ public class DedeApplication {
         log.info("  --runtime-traces <otlp.json>  Join OpenTelemetry traces (Collector file exporter) to the graph; ranks findings by runtime calls");
         log.info("  --emit-otel-config <path>     Write an OpenTelemetry Java agent config that instruments the classes that matter");
         log.info("  --request-log <path>          AEM request.log or access.log: attribute requests to servlets, pages, components and models");
+        log.info("  --error-log <path>            AEM error.log: tie WARN/ERROR entries to project classes and their findings");
         log.info("  --otel-max-classes <n>        Class cap for --emit-otel-config (default 50)");
         log.info("  --otel-config <path>          With --runtime-traces: the agent config used, to report instrumented-but-never-called classes");
         log.info("  --extended-checks   Also run content-package (OakPal; needs 'mvn package' first), legacy-path and service-user checks");

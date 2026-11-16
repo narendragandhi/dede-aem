@@ -96,6 +96,7 @@ Options:
   --emit-otel-config <f>   Write an OpenTelemetry Java agent config for the classes that matter
   --otel-config <f>        With --runtime-traces: the config used, to report instrumented-but-never-called classes
   --request-log <f>        AEM request.log / access.log: attribute requests to servlets, components and models
+  --error-log <f>          AEM error.log: tie WARN/ERROR entries to project classes and their findings
   --extended-checks        Also run content-package, legacy-path and service-user checks (see below)
   --security               Enable security surface audit
   --sarif <path.sarif.json> Export forbidden-API findings as SARIF 2.1.0
@@ -197,6 +198,18 @@ resource types with project code that never rendered, top unattributed paths) an
 get `runtime.requests`. Counts are estimated renders. Pages authored only in AEM (not in the
 repository) can't be resolved and stay unattributed. Because it reads AEM's own logs, this
 works on AEM as a Cloud Service too.
+
+**Errors from `error.log` (no agent needed).** `--error-log error.log` reads WARN and ERROR
+entries with their stack traces (AEM SDK/on-premise format, and Cloud Service downloads with the
+pod prefix). Each entry belongs to the topmost stack frame in project code -- so a model that
+throws inside Sling's model factory is blamed on the model -- or else to its logger when that is a
+project class; the rest is counted as platform noise. The JSON report gets a `logs` block: per
+class, ERROR/WARN counts, first/last seen, repeated messages grouped into signatures (numbers and
+ids stripped), and the request paths that triggered them (Sling names request threads after the
+URL); plus the findings in classes that logged errors, top exception types and top unattributed
+loggers. Each finding gets `logEntries`, and class nodes get `runtime.logErrors` /
+`runtime.logWarnings`. Scanning WKND together with a 10 MB AEM SDK error.log took 4 seconds.
+
 **Verified on a running AEM** (AEM SDK author, OpenTelemetry Java agent 2.10.0, Adobe's WKND):
 dede's generated config instrumented WKND's Sling Models inside their OSGi bundle, and
 request attribution from AEM's `request.log` matched the trace ground truth (trace ID -> URL ->

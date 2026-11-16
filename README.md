@@ -210,6 +210,13 @@ URL); plus the findings in classes that logged errors, top exception types and t
 loggers. Each finding gets `logEntries`, and class nodes get `runtime.logErrors` /
 `runtime.logWarnings`. Scanning WKND together with a 10 MB AEM SDK error.log took 4 seconds.
 
+**Runtime data in snapshots.** With any of the runtime flags, `--snapshot` stores each node's
+`runtime.*` values, and `--compare` reports a RUNTIME CHANGES section: errors where there were
+none (listed first, and raising the delta severity to at least MEDIUM), code no longer called or
+rendered, counts that doubled or halved by at least 10, and average latency up or down 50% by at
+least 5 ms. A metric is compared only when both scans recorded it -- a scan without `--error-log`
+says nothing about log errors. Counts are raw, so compare windows of similar length.
+
 **Verified on a running AEM** (AEM SDK author, OpenTelemetry Java agent 2.10.0, Adobe's WKND):
 dede's generated config instrumented WKND's Sling Models inside their OSGi bundle, and
 request attribution from AEM's `request.log` matched the trace ground truth (trace ID -> URL ->

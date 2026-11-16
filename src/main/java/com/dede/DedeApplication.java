@@ -234,19 +234,6 @@ public class DedeApplication {
             }
 
 
-            // Delta Analysis
-            if (snapshotPath != null) {
-                log.info("Saving snapshot to: {}", snapshotPath);
-                String savedPath = deltaAnalyzer.saveSnapshot(Path.of(snapshotPath));
-                log.info("Snapshot saved: {}", savedPath);
-            }
-
-            if (compareSnapshot != null) {
-                log.info("Comparing with snapshot: {}", compareSnapshot);
-                var deltaReport = deltaAnalyzer.compareWithSnapshot(Path.of(compareSnapshot));
-                log.info("\n{}", deltaAnalyzer.generateTextReport(deltaReport));
-            }
-
             // Cloud Readiness Analysis
             if (cloudReadiness) {
                 log.info("Running AEM Cloud Service readiness analysis...");
@@ -374,6 +361,19 @@ public class DedeApplication {
                     failing.stream().limit(10).forEach(e -> log.info("  {} log entries  {} [{}] {}", e.getValue(),
                         e.getKey().severity(), e.getKey().category(), e.getKey().file()));
                 }
+            }
+
+            // Delta Analysis -- after the runtime data is joined, so snapshots carry it too.
+            if (snapshotPath != null) {
+                log.info("Saving snapshot to: {}", snapshotPath);
+                String savedPath = deltaAnalyzer.saveSnapshot(Path.of(snapshotPath));
+                log.info("Snapshot saved: {}", savedPath);
+            }
+
+            if (compareSnapshot != null) {
+                log.info("Comparing with snapshot: {}", compareSnapshot);
+                var deltaReport = deltaAnalyzer.compareWithSnapshot(Path.of(compareSnapshot));
+                log.info("\n{}", deltaAnalyzer.generateTextReport(deltaReport));
             }
 
             // Printed after the runtime data is joined, so blast radius can be weighted by traffic.

@@ -101,4 +101,42 @@ class SourceParserTest {
                     + "loadProfiles() likely fell back to filesystem-only lookup again"));
         assertThat(resourceTypeNode.getType()).isEqualTo(NodeType.JCR_RESOURCE_TYPE);
     }
+
+    /** WKND's pattern: @Model(resourceType = {BylineImpl.RESOURCE_TYPE}) must bind to the value, not the text. */
+    @Test
+    void resolvesResourceTypeConstantsDeclaredInTheSameFile(@TempDir Path tempDir) throws IOException {
+        GraphService graphService = createService();
+        SourceParser parser = new SourceParser(graphService);
+        Path sourceFile = tempDir.resolve("BylineImpl.java");
+        Files.writeString(sourceFile, """
+                package com.acme;
+                import org.apache.sling.models.annotations.Model;
+                @Model(adaptables = Object.class, resourceType = {BylineImpl.RESOURCE_TYPE})
+                public class BylineImpl {
+                    protected static final String RESOURCE_TYPE = "site/components/byline";
+                }
+                """);
+
+        parser.parse(sourceFile);
+
+        assertThat(graphService.findNodeById("resType:site/components/byline")).isPresent();
+        assertThat(graphService.findNodeById("resType:BylineImpl.RESOURCE_TYPE")).isEmpty();
+    }
+
+    @Test
+    void keepsTheSymbolicTextForConstantsFromOtherFiles(@TempDir Path tempDir) throws IOException {
+        GraphService graphService = createService();
+        SourceParser parser = new SourceParser(graphService);
+        Path sourceFile = tempDir.resolve("TeaserImpl.java");
+        Files.writeString(sourceFile, """
+                package com.acme;
+                import org.apache.sling.models.annotations.Model;
+                @Model(adaptables = Object.class, resourceType = Constants.TEASER)
+                public class TeaserImpl { }
+                """);
+
+        parser.parse(sourceFile);
+
+        assertThat(graphService.findNodeById("resType:Constants.TEASER")).isPresent();
+    }
 }

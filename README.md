@@ -91,6 +91,13 @@ Options:
   --dot <path.dot>         Export dependency graph to DOT format
   --json <path.json>       Export findings, graph stats and suggestions as JSON
   --fail-on-critical       Exit with code 1 if any CRITICAL finding exists (CI gate)
+  --fail-on <level>        Exit with code 1 on any finding at <level> or above (CRITICAL, HIGH, MEDIUM, LOW, INFO)
+  --runtime-traces <file>  Join OpenTelemetry traces to the graph and rank findings by runtime calls
+  --emit-otel-config <f>   Write an OpenTelemetry Java agent config for the classes that matter
+  --otel-config <f>        With --runtime-traces: the config used, to report instrumented-but-never-called classes
+  --request-log <f>        AEM request.log / access.log: attribute requests to servlets, components and models
+  --error-log <f>          AEM error.log: tie WARN/ERROR entries to project classes and their findings
+  --mcp                    After the scan, serve it to AI agents as an MCP server on stdio
   --extended-checks        Also run content-package, legacy-path and service-user checks (see below)
   --security               Enable security surface audit
   --sarif <path.sarif.json> Export forbidden-API findings as SARIF 2.1.0
@@ -128,7 +135,7 @@ A selection; the full list with matched packages/classes is in
 ### Extended Checks (opt-in)
 
 `--extended-checks` (CLI) or `-Ddede.extendedChecks=true` (Maven) adds three checks. Their
-findings appear in the JSON report and count toward `--fail-on-critical` / `failOnCritical`.
+findings appear in the JSON report and count toward `--fail-on` / `failOnSeverity`.
 
 | Source | What it checks | Severity |
 |--------|----------------|----------|
@@ -142,6 +149,94 @@ in-memory repository without AEM's node types, so import errors that only come f
 product node types or parent nodes are skipped (and counted in the log) rather than reported.
 Factory configurations such as `RepositoryInitializer~myproject.cfg.json` are the supported way
 to customize cloud-managed services and are not flagged.
+
+### Runtime Overlay (OpenTelemetry)
+
+Static findings say what *could* break; traces say what actually runs. Dede joins
+OpenTelemetry traces to its code graph, so you can rank findings by real traffic.
+
+```bash
+# 1. Let the graph pick what to instrument: classes with findings, then AEM entry points
+#    (servlets, filters, Sling Models, OSGi components), then high fan-in. Capped at 50.
+java -jar dede.jar ./my-aem-project --emit-otel-config otel.properties
+
+# 2. Run AEM (or any JVM) with the OpenTelemetry Java agent and that config:
+#    -javaagent:opentelemetry-javaagent.jar -Dotel.javaagent.configuration-file=otel.properties
+#    On the AEM SDK: CQ_JVM_OPTS="... -javaagent:... -Dotel.javaagent.configuration-file=..."
+#    crx-quickstart/bin/start. No OSGi boot-delegation change was needed (agent 2.10).
+
+# 3. Feed the traces back: Collector `file` exporter output, or the agent's own log
+#    with -Dotel.traces.exporter=logging-otlp (no Collector needed).
+java -jar dede.jar ./my-aem-project --runtime-traces traces.json --json report.json
+```
+
+What you get:
+- each finding in the JSON report carries `runtimeCalls`, the observed calls to its code
+  (absent = not observed, which is not the same as dead unless the class was instrumented);
+- a `runtime` block with the trace window, the hottest classes (calls, errors, avg/max ms,
+  per-method calls) and the hottest findings;
+- `runtime.calls`, `runtime.errors`, `runtime.avgMs`, `runtime.maxMs` properties on graph
+  class nodes, visible through the REST and GraphQL APIs.
+
+Spans are tied to code through `code.namespace`/`code.function` (or `code.function.name`).
+
+**Confirmed dead code.** The generated config also instruments classes with no static
+references. Pass it back with `--otel-config otel.properties` and every instrumented class that
+produced no span is listed under `runtime.instrumentedNotCalled` with a verdict -- *likely dead*,
+*entry point never invoked*, or *referenced but not called* -- and the window length. A short
+window only proves the code didn't run in that window.
+
+**Request attribution (no method instrumentation needed).** HTTP server spans, or AEM's own
+`request.log` / `access.log` via `--request-log`, are attributed to project code:
+- `@SlingServletPaths` servlets by path (exact, `.ext`, or `/suffix`);
+- `/content` requests through the project's content (`ui.content`) to the resource types on the
+  page, then to the Sling Models (`@Model(resourceType)` or HTL `data-sly-use`) and
+  `@SlingServletResourceTypes` servlets bound to them -- honoring the servlet's selectors and
+  extensions, and counting a page as rendered only when no servlet took the request.
+
+The JSON report gets a `requests` block (requests per class, renders per resource type,
+resource types with project code that never rendered, top unattributed paths) and class nodes
+get `runtime.requests`. Counts are estimated renders. Pages authored only in AEM (not in the
+repository) can't be resolved and stay unattributed. Because it reads AEM's own logs, this
+works on AEM as a Cloud Service too.
+
+**Errors from `error.log` (no agent needed).** `--error-log error.log` reads WARN and ERROR
+entries with their stack traces (AEM SDK/on-premise format, and Cloud Service downloads with the
+pod prefix). Each entry belongs to the topmost stack frame in project code -- so a model that
+throws inside Sling's model factory is blamed on the model -- or else to its logger when that is a
+project class; the rest is counted as platform noise. The JSON report gets a `logs` block: per
+class, ERROR/WARN counts, first/last seen, repeated messages grouped into signatures (numbers and
+ids stripped), and the request paths that triggered them (Sling names request threads after the
+URL); plus the findings in classes that logged errors, top exception types and top unattributed
+loggers. Each finding gets `logEntries`, and class nodes get `runtime.logErrors` /
+`runtime.logWarnings`. Scanning WKND together with a 10 MB AEM SDK error.log took 4 seconds.
+
+**Runtime data in snapshots.** With any of the runtime flags, `--snapshot` stores each node's
+`runtime.*` values, and `--compare` reports a RUNTIME CHANGES section: errors where there were
+none (listed first, and raising the delta severity to at least MEDIUM), code no longer called or
+rendered, counts that doubled or halved by at least 10, and average latency up or down 50% by at
+least 5 ms. A metric is compared only when both scans recorded it -- a scan without `--error-log`
+says nothing about log errors. Counts are raw, so compare windows of similar length.
+
+**MCP server for AI agents.** `--mcp` runs the scan (with any runtime flags), then serves it over
+stdio as a Model Context Protocol server. Logs go to stderr; stdout carries only the protocol.
+Tools: `summary` (finding counts, graph size, joined runtime sections), `list_findings` (filter
+by severity, category, file, or only code that ran), `class_info` (properties including
+`runtime.*`, findings, dependencies and dependents), `impact` (transitive dependents, busiest
+first), `search`. For Claude Code:
+
+```bash
+claude mcp add dede -- java -jar /path/to/dede.jar /path/to/aem-project --request-log /path/to/request.log --mcp
+```
+
+The scan is fixed for the life of the server; restart it to rescan.
+
+**Verified on a running AEM** (AEM SDK author, OpenTelemetry Java agent 2.10.0, Adobe's WKND):
+dede's generated config instrumented WKND's Sling Models inside their OSGi bundle, and
+request attribution from AEM's `request.log` matched the trace ground truth (trace ID -> URL ->
+model) for every page browsed: image list on home/adventures/magazine, byline (via experience
+fragment) on articles, nothing for 404s and login. Dede reads telemetry -- it is not a
+tracing backend.
 
 ### Dependency Analysis
 
@@ -187,6 +282,14 @@ Each CVE becomes a node in the dependency graph, linked to the JAR/OSGi bundle i
 ```
 
 A CVE reachable from 12 public-facing components is a materially different priority than one only reachable from an internal admin tool, even if the second one has a higher CVSS score.
+
+**Weighted by real traffic.** Add runtime data (`--request-log`, `--runtime-traces`) and the
+ranking uses the traffic observed at each CVE's reachable endpoints: requests per servlet,
+renders per component, or method calls, summed. Twelve endpoints nobody calls rank below one
+that serves every page. CVEs whose endpoints saw no traffic keep their static order, after the
+observed ones. With `--json`, the report gets a `vulnerabilities` list with `blastRadius`,
+`observedTraffic` and the endpoints. CVEs are linked to code through OSGi bundles, which come
+from built manifests -- run `mvn package` before scanning.
 
 ---
 
@@ -449,6 +552,10 @@ See [`examples/github-workflow.yml`](examples/github-workflow.yml) for a copy-pa
 
 `--fail-on-critical` exits with code 1 when any CRITICAL forbidden-API finding or
 cloud-readiness issue exists; the JSON report is still written first so it can be uploaded.
+For a stricter gate use `--fail-on HIGH` (or `MEDIUM`, `LOW`, `INFO`): it fails on that
+severity and everything above it. An unknown level exits with code 2 rather than running
+without a gate. Expect HIGH to be noisy on code that still targets AEM 6.5 -- ACS AEM Commons
+has ~160 HIGH findings, almost all the legacy `com.day.cq.workflow` API.
 
 ### Maven Plugin
 
@@ -479,7 +586,8 @@ All parameters are optional:
 | `dependencyCheckReport` | *(none)* | Path to an OWASP Dependency-Check JSON report, for CVE blast-radius ranking |
 | `sarifOutputFile` | `${project.build.directory}/dede-report.sarif.json` | Where to write SARIF findings |
 | `bpaReportFile` | `${project.build.directory}/dede-bpa-report.json` | Where to write the BPA-compatible report |
-| `failOnCritical` | `true` | Fail the build on any CRITICAL finding (forbidden-API or cloud-readiness) |
+| `failOnCritical` | `true` | Enable the severity gate; `false` turns it off whatever `failOnSeverity` says |
+| `failOnSeverity` | `CRITICAL` | Gate threshold: fail on findings at this level or above -- `CRITICAL`, `HIGH`, `MEDIUM`, `LOW`, `INFO` (`-Ddede.failOnSeverity=HIGH`). Same as the CLI's `--fail-on` |
 | `baselineFile` | *(none)* | Enables **ratchet mode** (see below): fail only on forbidden-API violations not already in this baseline |
 | `updateBaseline` | `false` | With `baselineFile`: rewrite it from current findings instead of gating (`-Ddede.updateBaseline=true`) |
 | `multiModuleRoot` | `${maven.multiModuleProjectDirectory}` | Root used to relativize baseline keys -- in a reactor this makes each module's findings distinct against one shared baseline |

@@ -14,6 +14,16 @@ import com.dede.cloud.CloudFindings;
 import com.dede.cloud.CloudFindingsService;
 import com.dede.cloud.SarifReport;
 import com.dede.security.DependencyCveImporter;
+import com.dede.runtime.OtelConfigEmitter;
+import com.dede.runtime.OtlpTraceReader;
+import com.dede.runtime.RuntimeOverlay;
+import com.dede.runtime.ContentIndex;
+import com.dede.mcp.DedeTools;
+import com.dede.mcp.McpServer;
+import com.dede.runtime.ErrorAttribution;
+import com.dede.runtime.ErrorLogReader;
+import com.dede.runtime.RequestAttribution;
+import com.dede.runtime.RequestLogReader;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import org.slf4j.Logger;
@@ -38,8 +48,27 @@ public class DedeApplication {
     private static final Logger log = LoggerFactory.getLogger(DedeApplication.class);
     private static final String VERSION = "2.0.0";
 
+    /** stdout as it was at startup: the MCP protocol channel in --mcp mode (logs go to stderr). */
+    private static java.io.PrintStream protocolOut = System.out;
+
     public static void main(String[] args) {
-        SpringApplication.run(DedeApplication.class, args);
+        if (java.util.Arrays.asList(args).contains("--mcp")) {
+            // MCP over stdio: stdout carries JSON-RPC only. Everything else -- Spring's banner,
+            // the scan's log output -- goes to stderr, which MCP clients show as server logs.
+            protocolOut = System.out;
+            System.setOut(System.err);
+        }
+        SpringApplication app = new SpringApplication(DedeApplication.class);
+        if (isOneShotScan(args)) {
+            // A CLI scan runs and exits: don't start the REST/GraphQL server (and its API-key
+            // banner). Server mode (no args) and --watch keep the web layer.
+            app.setWebApplicationType(org.springframework.boot.WebApplicationType.NONE);
+        }
+        app.run(args);
+    }
+
+    static boolean isOneShotScan(String[] args) {
+        return args.length > 0 && !args[0].startsWith("-") && !java.util.Arrays.asList(args).contains("--watch");
     }
 
     @Bean
@@ -78,8 +107,15 @@ public class DedeApplication {
             boolean cloudReadiness = false;
             boolean watchMode = false;
             String jsonOutputPath = null;
-            boolean failOnCritical = false;
+            String runtimeTracesPath = null;
+            String otelConfigPath = null;
+            String instrumentedConfigPath = null;
+            String requestLogPath = null;
+            String errorLogPath = null;
+            int otelMaxClasses = 50;
+            String failOn = null;  // gate threshold; null = no gate
             boolean extendedChecks = false;
+            boolean mcpMode = false;
 
             for (int i = 1; i < args.length; i++) {
                 if (args[i].startsWith("--") && !KNOWN_FLAGS.contains(args[i])) {
@@ -88,8 +124,43 @@ public class DedeApplication {
                 if ("--json".equals(args[i]) && i + 1 < args.length) {
                     jsonOutputPath = args[i + 1];
                 }
-                if ("--fail-on-critical".equals(args[i])) {
-                    failOnCritical = true;
+                if ("--runtime-traces".equals(args[i]) && i + 1 < args.length) {
+                    runtimeTracesPath = args[i + 1];
+                }
+                if ("--emit-otel-config".equals(args[i]) && i + 1 < args.length) {
+                    otelConfigPath = args[i + 1];
+                }
+                if ("--request-log".equals(args[i]) && i + 1 < args.length) {
+                    requestLogPath = args[i + 1];
+                }
+                if ("--error-log".equals(args[i]) && i + 1 < args.length) {
+                    errorLogPath = args[i + 1];
+                }
+                if ("--otel-config".equals(args[i]) && i + 1 < args.length) {
+                    instrumentedConfigPath = args[i + 1];
+                }
+                if ("--otel-max-classes".equals(args[i]) && i + 1 < args.length) {
+                    try {
+                        otelMaxClasses = Integer.parseInt(args[i + 1]);
+                    } catch (NumberFormatException e) {
+                        log.error("--otel-max-classes: not a number: {}", args[i + 1]);
+                        System.exit(SpringApplication.exit(context, () -> 2));
+                    }
+                }
+                if ("--fail-on-critical".equals(args[i]) && failOn == null) {
+                    failOn = "CRITICAL";
+                }
+                if ("--fail-on".equals(args[i])) {
+                    try {
+                        failOn = CloudFindings.parseThreshold(i + 1 < args.length ? args[i + 1] : null);
+                    } catch (IllegalArgumentException e) {
+                        // A mistyped gate must not run as "no gate".
+                        log.error("--fail-on: {}", e.getMessage());
+                        System.exit(SpringApplication.exit(context, () -> 2));
+                    }
+                }
+                if ("--mcp".equals(args[i])) {
+                    mcpMode = true;
                 }
                 if ("--extended-checks".equals(args[i])) {
                     extendedChecks = true;
@@ -177,22 +248,6 @@ public class DedeApplication {
                 governance.printViolations();
             }
 
-            if (checkSecurity) {
-                security.printReport();
-            }
-
-            // Delta Analysis
-            if (snapshotPath != null) {
-                log.info("Saving snapshot to: {}", snapshotPath);
-                String savedPath = deltaAnalyzer.saveSnapshot(Path.of(snapshotPath));
-                log.info("Snapshot saved: {}", savedPath);
-            }
-
-            if (compareSnapshot != null) {
-                log.info("Comparing with snapshot: {}", compareSnapshot);
-                var deltaReport = deltaAnalyzer.compareWithSnapshot(Path.of(compareSnapshot));
-                log.info("\n{}", deltaAnalyzer.generateTextReport(deltaReport));
-            }
 
             // Cloud Readiness Analysis
             if (cloudReadiness) {
@@ -218,10 +273,147 @@ public class DedeApplication {
             }
 
             // One set of findings (catalog scan + graph checks), shared by the SARIF export, the
-            // JSON report and --fail-on-critical -- the same set the Maven plugin gates on.
+            // JSON report and --fail-on / --fail-on-critical -- the same set the Maven plugin gates on.
             Path scanRoot = Path.of(projectPath);
-            boolean needFindings = sarifOutputPath != null || jsonOutputPath != null || failOnCritical;
+            boolean needFindings = sarifOutputPath != null || jsonOutputPath != null || failOn != null
+                || runtimeTracesPath != null || otelConfigPath != null || errorLogPath != null || mcpMode;
             CloudFindings findings = needFindings ? cloudFindings.collect(scanRoot, extendedChecks) : null;
+
+            // Runtime overlay: OpenTelemetry traces joined to the code graph.
+            RuntimeOverlay runtime = null;
+            List<Map<String, Object>> instrumentedNotCalled = null;
+            if (instrumentedConfigPath != null && runtimeTracesPath == null) {
+                log.error("--otel-config needs --runtime-traces: it says which classes the traces were watching.");
+                System.exit(SpringApplication.exit(context, () -> 2));
+            }
+            if (runtimeTracesPath != null) {
+                try {
+                    runtime = RuntimeOverlay.apply(OtlpTraceReader.read(Path.of(runtimeTracesPath)), graphService);
+                    log.info("Runtime traces: {} span(s), {} matched to {} project class(es), {} without code attributes, "
+                            + "{} class(es) outside the scanned code",
+                        runtime.totalSpans(), runtime.matchedSpans(), runtime.matchedClassCount(), runtime.unattributedSpans(), runtime.unmatched().size());
+                    if (runtime.matchedClassCount() == 0) {
+                        String hint = "no method span could be tied to project code. Method spans need code.namespace/"
+                            + "code.function attributes -- generate an agent config with --emit-otel-config.";
+                        if (runtime.serverRequests().isEmpty()) {
+                            log.warn("Runtime traces: {}", hint);
+                        } else {
+                            log.info("Runtime traces: {} HTTP request span(s) will be attributed by path; {}",
+                                runtime.serverRequests().size(), hint);
+                        }
+                    }
+                    if (instrumentedConfigPath != null) {
+                        instrumentedNotCalled = runtime.instrumentedNotCalled(
+                            OtelConfigEmitter.readInstrumentedClasses(Path.of(instrumentedConfigPath)), graphService);
+                        log.info("Instrumented but never called in a {} trace window: {} class(es)",
+                            runtime.windowLabel(), instrumentedNotCalled.size());
+                        instrumentedNotCalled.stream().limit(10).forEach(r -> log.info("  {} -- {}", r.get("class"), r.get("verdict")));
+                        if (runtime.windowHours() < 24) {
+                            log.warn("Trace window is under 24 hours: 'never called' only covers that window "
+                                + "(scheduled and monthly jobs may simply not have run).");
+                        }
+                    }
+                    var hot = runtime.hotFindings(findings.all());
+                    if (!hot.isEmpty()) {
+                        log.info("Findings in code that ran ({}), most-called first:", hot.size());
+                        hot.stream().limit(10).forEach(e -> log.info("  {} calls  {} [{}] {}", e.getValue(),
+                            e.getKey().severity(), e.getKey().category(), e.getKey().file()));
+                    }
+                } catch (IOException | RuntimeException e) {
+                    // A CI step relying on the overlay must not silently get a report without it.
+                    log.error("Failed to read runtime traces from {}: {}", runtimeTracesPath, e.getMessage());
+                    System.exit(SpringApplication.exit(context, () -> 2));
+                }
+            }
+
+            // Request attribution: HTTP server spans and/or AEM request.log/access.log -> code.
+            RequestAttribution requestAttribution = null;
+            List<RequestLogReader.RequestRecord> requests = new java.util.ArrayList<>();
+            if (runtime != null && requestLogPath == null) {
+                requests.addAll(runtime.serverRequests());
+            } else if (runtime != null && !runtime.serverRequests().isEmpty()) {
+                // Both describe the same traffic; counting both doubles every request.
+                log.info("Requests: using --request-log; ignoring {} HTTP server span(s) from the traces "
+                    + "(same requests, would be counted twice).", runtime.serverRequests().size());
+            }
+            if (requestLogPath != null) {
+                try {
+                    requests.addAll(RequestLogReader.read(Path.of(requestLogPath)));
+                } catch (IOException e) {
+                    log.error("Failed to read request log {}: {}", requestLogPath, e.getMessage());
+                    System.exit(SpringApplication.exit(context, () -> 2));
+                }
+            }
+            if (!requests.isEmpty()) {
+                ContentIndex content = ContentIndex.build(scanRoot);
+                requestAttribution = RequestAttribution.apply(requests, content, graphService);
+                log.info("Requests: {} total, {} attributed to project code ({} content page(s) indexed)",
+                    requestAttribution.total(), requestAttribution.attributed(), content.pageCount());
+                requestAttribution.hotClasses(10).forEach(e -> log.info("  {} requests  {}", e.getValue(), e.getKey()));
+                List<String> neverRendered = requestAttribution.resourceTypesNeverRendered();
+                if (!neverRendered.isEmpty()) {
+                    log.info("Resource types with project models/servlets never rendered: {}", neverRendered.size());
+                }
+            }
+
+            // error.log: WARN/ERROR entries -> the project classes they came from -> their findings.
+            ErrorAttribution errorAttribution = null;
+            if (errorLogPath != null) {
+                try {
+                    errorAttribution = ErrorAttribution.apply(ErrorLogReader.read(Path.of(errorLogPath)), graphService);
+                } catch (IOException e) {
+                    log.error("Failed to read error log {}: {}", errorLogPath, e.getMessage());
+                    System.exit(SpringApplication.exit(context, () -> 2));
+                }
+                log.info("Error log: {} WARN/ERROR entries ({} ERROR), {} attributed to {} project class(es)",
+                    errorAttribution.total(), errorAttribution.errorCount(), errorAttribution.attributed(),
+                    errorAttribution.failingClasses().size());
+                errorAttribution.failingClasses().stream().limit(10).forEach(c ->
+                    log.info("  {} errors, {} warnings  {}", c.errors(), c.warnings(), c.className()));
+                var failing = errorAttribution.findingsInFailingCode(findings.all());
+                if (!failing.isEmpty()) {
+                    log.info("Findings in code that logged errors ({}):", failing.size());
+                    failing.stream().limit(10).forEach(e -> log.info("  {} log entries  {} [{}] {}", e.getValue(),
+                        e.getKey().severity(), e.getKey().category(), e.getKey().file()));
+                }
+            }
+
+            // Delta Analysis -- after the runtime data is joined, so snapshots carry it too.
+            if (snapshotPath != null) {
+                log.info("Saving snapshot to: {}", snapshotPath);
+                String savedPath = deltaAnalyzer.saveSnapshot(Path.of(snapshotPath));
+                log.info("Snapshot saved: {}", savedPath);
+            }
+
+            if (compareSnapshot != null) {
+                log.info("Comparing with snapshot: {}", compareSnapshot);
+                var deltaReport = deltaAnalyzer.compareWithSnapshot(Path.of(compareSnapshot));
+                log.info("\n{}", deltaAnalyzer.generateTextReport(deltaReport));
+            }
+
+            // Printed after the runtime data is joined, so blast radius can be weighted by traffic.
+            if (checkSecurity) {
+                if ((runtime != null || requestAttribution != null) && security.weightByRuntime(graphService.getGraph())) {
+                    log.info("Blast radius: ranked by traffic observed at the reachable endpoints, then endpoint count.");
+                }
+                security.printReport();
+            }
+
+            if (otelConfigPath != null) {
+                int maxClasses = otelMaxClasses;
+                var selections = OtelConfigEmitter.select(graphService, findings.all(), maxClasses);
+                if (selections.size() == maxClasses) {
+                    log.warn("OpenTelemetry config: capped at {} classes to keep agent overhead down; classes with "
+                        + "findings were picked first, then entry points, then by fan-in.", maxClasses);
+                }
+                try {
+                    java.nio.file.Files.writeString(Path.of(otelConfigPath), OtelConfigEmitter.render(selections));
+                    log.info("OpenTelemetry agent config for {} class(es) written to {}", selections.size(), otelConfigPath);
+                } catch (IOException e) {
+                    log.error("Failed to write OpenTelemetry config to {}: {}", otelConfigPath, e.getMessage());
+                    System.exit(SpringApplication.exit(context, () -> 2));
+                }
+            }
 
             // SARIF Report (for GitHub Code Scanning, VS Code Problems panel, SIEMs)
             if (sarifOutputPath != null) {
@@ -256,9 +448,12 @@ public class DedeApplication {
                 }
             }
 
+            Map<String, Object> report = jsonOutputPath != null || mcpMode
+                ? buildJsonReport(projectPath, graphService, findings, suggestions, runtime, instrumentedNotCalled,
+                    requestAttribution, errorAttribution, checkSecurity ? security.getBlastRadiusFindings() : null)
+                : null;
             if (jsonOutputPath != null) {
                 log.info("Writing JSON report: {}", jsonOutputPath);
-                Map<String, Object> report = buildJsonReport(projectPath, graphService, findings, suggestions);
                 ObjectMapper mapper = new ObjectMapper().enable(SerializationFeature.INDENT_OUTPUT);
                 try {
                     mapper.writeValue(new File(jsonOutputPath), report);
@@ -270,10 +465,18 @@ public class DedeApplication {
             }
 
             int exitCode = 0;
-            String criticalFailure = failOnCritical ? findings.criticalFailureMessage() : null;
-            if (criticalFailure != null) {
-                log.error("Failing (--fail-on-critical): {}", criticalFailure);
+            String gateFailure = failOn != null ? findings.failureMessage(failOn) : null;
+            if (gateFailure != null) {
+                log.error("Failing (--fail-on {}): {}", failOn, gateFailure);
                 exitCode = 1;
+            }
+
+            if (mcpMode) {
+                log.info("MCP server ready on stdio ({} findings, {} nodes). Tools: summary, list_findings, "
+                    + "class_info, impact, search.", findings.all().size(), graphService.getNodeCount());
+                new McpServer("dede", VERSION, new DedeTools(graphService, report).tools())
+                    .serve(System.in, protocolOut);
+                System.exit(SpringApplication.exit(context, () -> 0));
             }
 
             if (watchMode) {
@@ -288,10 +491,17 @@ public class DedeApplication {
     private static final Set<String> KNOWN_FLAGS = Set.of(
         "--help", "-h", "--rules", "--dot", "--analyze", "--security", "--profiles", "--snapshot",
         "--compare", "--bpa-report", "--sarif", "--suggestions", "--dependency-check-report",
-        "--cloud-readiness", "--watch", "--json", "--fail-on-critical", "--extended-checks");
+        "--cloud-readiness", "--watch", "--json", "--fail-on-critical", "--fail-on", "--extended-checks",
+        "--runtime-traces", "--emit-otel-config", "--otel-config", "--otel-max-classes",
+        "--request-log", "--error-log", "--mcp");
 
     private static Map<String, Object> buildJsonReport(String projectPath, GraphService graphService,
-                                                       CloudFindings findings, List<String> suggestions) {
+                                                       CloudFindings findings, List<String> suggestions,
+                                                       RuntimeOverlay runtime,
+                                                       List<Map<String, Object>> instrumentedNotCalled,
+                                                       RequestAttribution requestAttribution,
+                                                       ErrorAttribution errorAttribution,
+                                                       List<VulnerabilityService.BlastRadiusFinding> blastRadius) {
         Map<String, Object> graph = new LinkedHashMap<>();
         graph.put("nodes", graphService.getNodeCount());
         graph.put("edges", graphService.getEdgeCount());
@@ -302,7 +512,50 @@ public class DedeApplication {
         report.put("project", projectPath);
         report.put("summary", findings.summary());
         report.put("graph", graph);
-        report.put("violations", findings.all());
+        if (runtime == null && errorAttribution == null) {
+            report.put("violations", findings.all());
+        } else {
+            // Same findings, each with the observed call count of its code (absent = not observed).
+            ObjectMapper mapper = new ObjectMapper();
+            List<Map<String, Object>> violations = new java.util.ArrayList<>();
+            for (CloudFindings.Finding f : findings.all()) {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> row = mapper.convertValue(f, LinkedHashMap.class);
+                Long calls = runtime != null ? runtime.callsFor(f) : null;
+                if (calls != null) row.put("runtimeCalls", calls);
+                Long logEntries = errorAttribution != null ? errorAttribution.entriesFor(f) : null;
+                if (logEntries != null) row.put("logEntries", logEntries);
+                violations.add(row);
+            }
+            report.put("violations", violations);
+        }
+        if (runtime != null) {
+            Map<String, Object> runtimeBlock = runtime.summary(findings.all(), 20);
+            if (instrumentedNotCalled != null) {
+                runtimeBlock.put("windowHours", Math.round(runtime.windowHours() * 100) / 100.0);
+                runtimeBlock.put("instrumentedNotCalled", instrumentedNotCalled);
+            }
+            report.put("runtime", runtimeBlock);
+        }
+        if (requestAttribution != null) {
+            report.put("requests", requestAttribution.summary(20));
+        }
+        if (errorAttribution != null) {
+            report.put("logs", errorAttribution.summary(findings.all(), 20));
+        }
+        if (blastRadius != null) {
+            report.put("vulnerabilities", blastRadius.stream().map(b -> {
+                Map<String, Object> row = new LinkedHashMap<>();
+                row.put("cveId", b.cveId());
+                row.put("severity", b.severity());
+                row.put("cvssScore", b.cvssScore());
+                row.put("dependency", b.vulnerability().getProperties().get("dependency"));
+                row.put("blastRadius", b.blastRadius());
+                if (b.observedTraffic() != null) row.put("observedTraffic", b.observedTraffic());
+                row.put("endpoints", b.reachableEndpointIds());
+                return row;
+            }).toList());
+        }
         report.put("suggestions", suggestions);
         return report;
     }
@@ -339,6 +592,14 @@ public class DedeApplication {
         log.info("  --suggestions <path.json> Export refactoring suggestions as JSON");
         log.info("  --json <path.json>  Export findings (forbidden-API + cloud-readiness), graph stats and suggestions as JSON");
         log.info("  --fail-on-critical  Exit with code 1 if any CRITICAL finding exists (CI gate)");
+        log.info("  --fail-on <level>   Exit with code 1 on any finding at <level> or above: CRITICAL, HIGH, MEDIUM, LOW, INFO");
+        log.info("  --runtime-traces <otlp.json>  Join OpenTelemetry traces (Collector file exporter) to the graph; ranks findings by runtime calls");
+        log.info("  --emit-otel-config <path>     Write an OpenTelemetry Java agent config that instruments the classes that matter");
+        log.info("  --request-log <path>          AEM request.log or access.log: attribute requests to servlets, pages, components and models");
+        log.info("  --error-log <path>            AEM error.log: tie WARN/ERROR entries to project classes and their findings");
+        log.info("  --mcp                         After the scan, serve it to AI agents as an MCP server on stdio (logs go to stderr)");
+        log.info("  --otel-max-classes <n>        Class cap for --emit-otel-config (default 50)");
+        log.info("  --otel-config <path>          With --runtime-traces: the agent config used, to report instrumented-but-never-called classes");
         log.info("  --extended-checks   Also run content-package (OakPal; needs 'mvn package' first), legacy-path and service-user checks");
         log.info("Skipped by default: .git, node_modules, it.tests, ui.tests, Maven target/ and src/test/");
         log.info("  --watch             Start watching for file changes and update incrementally");

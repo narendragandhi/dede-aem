@@ -423,16 +423,19 @@ public class SourceParser implements ProjectParser {
                 // It's a class literal like TransformerFactory.class
                 values.add(cleanClassName(fae.getScope().toString()));
             } else {
-                // It's a constant reference like PageImpl.RESOURCE_TYPE
-                // Use the full expression as the value (will be a symbolic reference)
-                values.add(fae.toString());
+                // A constant reference like BylineImpl.RESOURCE_TYPE: resolve it when the
+                // constant is declared in this file (the usual @Model(resourceType = ...)
+                // pattern); otherwise keep the symbolic text.
+                values.add(resolveConstant(expr, fae.getScope().toString(), fae.getNameAsString())
+                    .orElse(fae.toString()));
             }
         } else if (expr.isStringLiteralExpr()) {
             // Handle string literals: "value"
             values.add(expr.asStringLiteralExpr().getValue());
         } else if (expr.isNameExpr()) {
-            // Handle direct name references: CONSTANT
-            values.add(expr.asNameExpr().getNameAsString());
+            // Handle direct name references: CONSTANT (resolved from the enclosing file if declared there)
+            String name = expr.asNameExpr().getNameAsString();
+            values.add(resolveConstant(expr, null, name).orElse(name));
         } else {
             // Fallback: use toString and clean up
             String raw = expr.toString();
@@ -445,6 +448,24 @@ public class SourceParser implements ProjectParser {
                 values.add(cleaned);
             }
         }
+    }
+
+    /**
+     * The string value of a constant declared in the same compilation unit as {@code at}:
+     * a field named {@code field} with a string-literal initializer, in the type named
+     * {@code typeName} (simple or qualified; null = any type in the file).
+     */
+    private java.util.Optional<String> resolveConstant(com.github.javaparser.ast.Node at, String typeName, String field) {
+        String simpleType = typeName == null ? null : typeName.substring(typeName.lastIndexOf('.') + 1);
+        return at.findCompilationUnit().flatMap(cu -> cu.findAll(TypeDeclaration.class).stream()
+            .filter(t -> simpleType == null || t.getNameAsString().equals(simpleType))
+            .flatMap(t -> ((TypeDeclaration<?>) t).getFields().stream())
+            .flatMap(f -> f.getVariables().stream())
+            .filter(v -> v.getNameAsString().equals(field))
+            .map(v -> v.getInitializer().filter(Expression::isStringLiteralExpr)
+                .map(i -> i.asStringLiteralExpr().getValue()).orElse(null))
+            .filter(java.util.Objects::nonNull)
+            .findFirst());
     }
 
     /**

@@ -26,12 +26,16 @@ import java.util.stream.Collectors;
  * - Compare two snapshots to find added/removed/modified nodes and edges
  * - Generate delta reports for CI/CD pipelines
  * - Track architectural drift over time
+ * - Compare runtime data (calls, requests, renders, errors) when the scans joined it: what
+ *   started failing, what stopped being called, what got slower
  */
 @Service
 public class DeltaAnalyzer {
 
     private static final Logger log = LoggerFactory.getLogger(DeltaAnalyzer.class);
-    private static final ObjectMapper objectMapper = new ObjectMapper();
+    // Snapshots outlive versions: newer fields in an old reader shouldn't break --compare.
+    private static final ObjectMapper objectMapper = new ObjectMapper()
+        .configure(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
 
     private final GraphService graphService;
 
@@ -132,6 +136,8 @@ public class DeltaAnalyzer {
             }
         }
 
+        report.getRuntimeChanges().addAll(runtimeChanges(oldSnapshot, newSnapshot, oldNodes));
+
         // Calculate summary stats
         report.setTotalNodesOld(oldSnapshot.getNodes().size());
         report.setTotalNodesNew(newSnapshot.getNodes().size());
@@ -149,12 +155,80 @@ public class DeltaAnalyzer {
         } else {
             report.setSeverity("NONE");
         }
+        // Code that started failing matters as much as a removed dependency.
+        boolean newErrors = report.getRuntimeChanges().stream().anyMatch(RuntimeChange::isNewErrors);
+        if (newErrors && ("NONE".equals(report.getSeverity()) || "LOW".equals(report.getSeverity()))) {
+            report.setSeverity("MEDIUM");
+        }
 
         log.info("Delta analysis complete: {} added nodes, {} removed nodes, {} added edges, {} removed edges",
             report.getAddedNodes().size(), report.getRemovedNodes().size(),
             report.getAddedEdges().size(), report.getRemovedEdges().size());
 
         return report;
+    }
+
+    /** Runtime counters compared between snapshots (see com.dede.runtime). */
+    static final List<String> COUNT_METRICS = List.of(
+        "runtime.calls", "runtime.requests", "runtime.renders", "runtime.errors",
+        "runtime.logErrors", "runtime.logWarnings");
+    static final String LATENCY_METRIC = "runtime.avgMs";
+    private static final Set<String> ERROR_METRICS = Set.of("runtime.errors", "runtime.logErrors");
+
+    /**
+     * Changes in runtime counters for nodes present in both snapshots. A metric is compared only
+     * when both scans recorded it somewhere (a scan without --error-log says nothing about log
+     * errors); within that, a node without the metric counts as 0. Reported: appeared (0 -> n),
+     * disappeared (n -> 0), doubled or halved with a difference of at least 10, and average
+     * latency up or down 50% by at least 5 ms. Counts are raw, so compare windows of similar length.
+     */
+    static List<RuntimeChange> runtimeChanges(GraphSnapshot oldSnapshot, GraphSnapshot newSnapshot,
+                                              Map<String, NodeSnapshot> oldNodes) {
+        Set<String> oldMetrics = metricsIn(oldSnapshot);
+        Set<String> newMetrics = metricsIn(newSnapshot);
+        List<RuntimeChange> changes = new ArrayList<>();
+        for (NodeSnapshot newNode : newSnapshot.getNodes()) {
+            NodeSnapshot oldNode = oldNodes.get(newNode.getId());
+            if (oldNode == null) continue;
+            for (String metric : COUNT_METRICS) {
+                if (!oldMetrics.contains(metric) || !newMetrics.contains(metric)) continue;
+                double before = value(oldNode, metric);
+                double after = value(newNode, metric);
+                boolean appeared = before == 0 && after > 0;
+                boolean disappeared = before > 0 && after == 0;
+                boolean big = Math.abs(after - before) >= 10 && (after >= 2 * before || after * 2 <= before);
+                if (appeared || disappeared || big) {
+                    changes.add(new RuntimeChange(newNode.getId(), newNode.getName(), metric, before, after));
+                }
+            }
+            if (oldNode.getRuntime().containsKey(LATENCY_METRIC) && newNode.getRuntime().containsKey(LATENCY_METRIC)) {
+                double before = value(oldNode, LATENCY_METRIC);
+                double after = value(newNode, LATENCY_METRIC);
+                if (Math.abs(after - before) >= 5 && (after >= 1.5 * before || after * 1.5 <= before)) {
+                    changes.add(new RuntimeChange(newNode.getId(), newNode.getName(), LATENCY_METRIC, before, after));
+                }
+            }
+        }
+        // New errors first, then by size of the change.
+        changes.sort(Comparator.comparing(RuntimeChange::isNewErrors).reversed()
+            .thenComparing(Comparator.comparingDouble((RuntimeChange c) -> Math.abs(c.getNewValue() - c.getOldValue())).reversed()));
+        return changes;
+    }
+
+    private static Set<String> metricsIn(GraphSnapshot snapshot) {
+        Set<String> metrics = new HashSet<>();
+        snapshot.getNodes().forEach(n -> metrics.addAll(n.getRuntime().keySet()));
+        return metrics;
+    }
+
+    private static double value(NodeSnapshot node, String metric) {
+        String raw = node.getRuntime().get(metric);
+        if (raw == null) return 0;
+        try {
+            return Double.parseDouble(raw);
+        } catch (NumberFormatException e) {
+            return 0;
+        }
     }
 
     /**
@@ -173,6 +247,9 @@ public class DeltaAnalyzer {
             ns.setName(node.getName());
             ns.setType(node.getType().name());
             ns.setSignature(node.getSignature());
+            node.getProperties().forEach((key, value) -> {
+                if (key.startsWith("runtime.")) ns.getRuntime().put(key, value);
+            });
             snapshot.getNodes().add(ns);
         }
 
@@ -261,10 +338,28 @@ public class DeltaAnalyzer {
             if (report.getRemovedEdges().size() > 10) {
                 sb.append(String.format("  ... and %d more\n", report.getRemovedEdges().size() - 10));
             }
+            sb.append("\n");
+        }
+
+        if (!report.getRuntimeChanges().isEmpty()) {
+            sb.append(String.format("RUNTIME CHANGES (%d)\n", report.getRuntimeChanges().size()));
+            sb.append("───────────────────────────────────────────────────────────\n");
+            for (RuntimeChange c : report.getRuntimeChanges().subList(0, Math.min(10, report.getRuntimeChanges().size()))) {
+                sb.append(String.format("  %s %s %s: %s → %s\n", c.isNewErrors() ? "!" : "~", c.getName(),
+                    c.getMetric().substring("runtime.".length()), number(c.getOldValue()), number(c.getNewValue())));
+            }
+            if (report.getRuntimeChanges().size() > 10) {
+                sb.append(String.format("  ... and %d more\n", report.getRuntimeChanges().size() - 10));
+            }
+            sb.append("  (raw counts: compare trace/log windows of similar length)\n");
         }
 
         sb.append("\n═══════════════════════════════════════════════════════════\n");
         return sb.toString();
+    }
+
+    private static String number(double v) {
+        return v == Math.rint(v) ? Long.toString((long) v) : String.format(Locale.ROOT, "%.2f", v);
     }
 
     // DTO Classes
@@ -286,7 +381,12 @@ public class DeltaAnalyzer {
         private String name;
         private String type;
         private String signature;
+        /** runtime.* properties at snapshot time; empty when the scan joined no runtime data. */
+        @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_EMPTY)
+        private Map<String, String> runtime = new TreeMap<>();
 
+        public Map<String, String> getRuntime() { return runtime; }
+        public void setRuntime(Map<String, String> runtime) { this.runtime = runtime != null ? runtime : new TreeMap<>(); }
         public String getId() { return id; }
         public void setId(String id) { this.id = id; }
         public String getName() { return name; }
@@ -308,6 +408,33 @@ public class DeltaAnalyzer {
         public void setTarget(String target) { this.target = target; }
         public String getType() { return type; }
         public void setType(String type) { this.type = type; }
+    }
+
+    /** One runtime counter that changed notably between snapshots. */
+    public static class RuntimeChange {
+        private String id;
+        private String name;
+        private String metric;
+        private double oldValue;
+        private double newValue;
+
+        public RuntimeChange() {}
+
+        public RuntimeChange(String id, String name, String metric, double oldValue, double newValue) {
+            this.id = id;
+            this.name = name;
+            this.metric = metric;
+            this.oldValue = oldValue;
+            this.newValue = newValue;
+        }
+
+        public String getId() { return id; }
+        public String getName() { return name; }
+        public String getMetric() { return metric; }
+        public double getOldValue() { return oldValue; }
+        public double getNewValue() { return newValue; }
+        /** Errors where there were none before. */
+        public boolean isNewErrors() { return ERROR_METRICS.contains(metric) && oldValue == 0 && newValue > 0; }
     }
 
     public static class ModifiedNode {
@@ -336,6 +463,7 @@ public class DeltaAnalyzer {
         private List<ModifiedNode> modifiedNodes = new ArrayList<>();
         private List<EdgeSnapshot> addedEdges = new ArrayList<>();
         private List<EdgeSnapshot> removedEdges = new ArrayList<>();
+        private List<RuntimeChange> runtimeChanges = new ArrayList<>();
 
         public String getOldTimestamp() { return oldTimestamp; }
         public void setOldTimestamp(String oldTimestamp) { this.oldTimestamp = oldTimestamp; }
@@ -356,5 +484,6 @@ public class DeltaAnalyzer {
         public List<ModifiedNode> getModifiedNodes() { return modifiedNodes; }
         public List<EdgeSnapshot> getAddedEdges() { return addedEdges; }
         public List<EdgeSnapshot> getRemovedEdges() { return removedEdges; }
+        public List<RuntimeChange> getRuntimeChanges() { return runtimeChanges; }
     }
 }

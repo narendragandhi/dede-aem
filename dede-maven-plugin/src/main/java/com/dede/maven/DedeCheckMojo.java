@@ -72,8 +72,17 @@ public class DedeCheckMojo extends AbstractMojo {
     @Parameter(defaultValue = "${project.build.directory}/dede-bpa-report.json")
     private File bpaReportFile;
 
+    /** Master switch for the severity gate; false disables it whatever failOnSeverity says. */
     @Parameter(defaultValue = "true")
     private boolean failOnCritical;
+
+    /**
+     * Severity threshold for the gate: the build fails on any finding at this level or above
+     * (CRITICAL, HIGH, MEDIUM, LOW, INFO). Same semantics as the CLI's {@code --fail-on}.
+     * An unknown value fails the build rather than silently disabling the gate.
+     */
+    @Parameter(property = "dede.failOnSeverity", defaultValue = "CRITICAL")
+    private String failOnSeverity = "CRITICAL";
 
     /**
      * Also run the extended checks: OakPal validation of built content packages (bind to a
@@ -115,6 +124,13 @@ public class DedeCheckMojo extends AbstractMojo {
         if (skip) {
             getLog().info("Dede check skipped (dede.skip=true)");
             return;
+        }
+        // Validate before booting Spring and scanning, so a typo fails fast and clearly
+        // instead of silently disabling the gate.
+        try {
+            CloudFindings.parseThreshold(failOnSeverity);
+        } catch (IllegalArgumentException e) {
+            throw new MojoExecutionException("Invalid failOnSeverity: " + e.getMessage());
         }
 
         ConfigurableApplicationContext context = new SpringApplicationBuilder(MojoBootstrapConfig.class)
@@ -200,17 +216,23 @@ public class DedeCheckMojo extends AbstractMojo {
     }
 
     /**
-     * Returns the failure message for CRITICAL findings -- forbidden-API catalog and graph
-     * readiness checks alike, the same set the CLI's --fail-on-critical gates on -- or null
-     * when the gate passes. Unit-testable against hand-built CloudFindings; see DedeCheckMojoTest.
+     * Returns the failure message for findings at {@code failOnSeverity} or above (default
+     * CRITICAL) -- forbidden-API catalog, graph readiness and enabled extended checks alike, the
+     * same set the CLI's --fail-on gates on -- or null when the gate passes. Unit-testable
+     * against hand-built CloudFindings; see DedeCheckMojoTest.
      */
     String checkCritical(CloudFindings findings) {
-        return failOnCritical ? findings.criticalFailureMessage() : null;
+        return failOnCritical ? findings.failureMessage(failOnSeverity) : null;
     }
 
     /** Test-only: production code sets this via the Mojo's @Parameter injection. */
     void setFailOnCritical(boolean failOnCritical) {
         this.failOnCritical = failOnCritical;
+    }
+
+    /** Test-only: production code sets this via the Mojo's @Parameter injection. */
+    void setFailOnSeverity(String failOnSeverity) {
+        this.failOnSeverity = failOnSeverity;
     }
 
     private void writeBpaReport(CloudReadinessReport cloudReport, BpaReportGenerator bpaGenerator) {

@@ -54,4 +54,31 @@ class CloudFindingsTest {
         assertThat(findings.criticalCount()).isZero();
         assertThat(findings.criticalFailureMessage()).isNull();
     }
+
+    @Test
+    void thresholdIncludesItsLevelAndEverythingAbove() {
+        CloudFindings findings = new CloudFindings(
+            new ForbiddenApiScanner.ScanResult(List.of(violation(ForbiddenApiCatalog.Severity.CRITICAL),
+                violation(ForbiddenApiCatalog.Severity.MEDIUM), violation(ForbiddenApiCatalog.Severity.INFO))),
+            readiness(new CloudIssue(Severity.HIGH, Category.SECURITY, "plain-text secret", "cfg.json", 0)));
+
+        assertThat(findings.atOrAbove("CRITICAL")).hasSize(1);
+        assertThat(findings.atOrAbove("high")).extracting(CloudFindings.Finding::severity)
+            .containsExactlyInAnyOrder("CRITICAL", "HIGH");
+        assertThat(findings.atOrAbove("MEDIUM")).hasSize(3);
+        assertThat(findings.atOrAbove("INFO")).hasSize(4);
+        assertThat(findings.failureMessage("HIGH"))
+            .startsWith("2 HIGH-or-above finding(s)")
+            .contains("HIGH [SECURITY] plain-text secret");
+        assertThat(findings.failureMessage("CRITICAL")).isEqualTo(findings.criticalFailureMessage());
+    }
+
+    @Test
+    void unknownThresholdIsRejectedNotTreatedAsNoGate() {
+        CloudFindings findings = new CloudFindings(new ForbiddenApiScanner.ScanResult(List.of()), readiness());
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> findings.failureMessage("SEVERE"))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("CRITICAL, HIGH, MEDIUM, LOW, INFO");
+    }
 }

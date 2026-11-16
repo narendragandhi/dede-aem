@@ -42,6 +42,9 @@ class McpServerTest {
         for (CodeNode n : List.of(model, servlet, util, otherUtil)) graph.addNode(n);
         graph.addEdge(model, util, RelationshipType.CALLS);
         graph.addEdge(servlet, util, RelationshipType.CALLS);
+        CodeNode pkg = new CodeNode("package:com.acme", "com.acme", NodeType.PACKAGE, "com.acme", null);
+        graph.addNode(pkg);
+        graph.addEdge(pkg, util, RelationshipType.CONTAINS);   // containment, not a dependency
 
         Map<String, Object> critical = new LinkedHashMap<>(Map.of("severity", "CRITICAL", "category", "ADMIN_SESSION",
             "file", "/p/core/Util.java", "line", 3, "runtimeCalls", 99L));

@@ -242,7 +242,9 @@ public final class RequestAttribution {
         Map<String, Object> summary = new LinkedHashMap<>();
         summary.put("total", total);
         summary.put("attributed", attributed);
-        summary.put("note", "counts are estimated renders: a page request counts once for each model on the page");
+        summary.put("note", "counts are estimated renders: a page request counts once for each model on the page. "
+            + "AEM's logs and spans only see requests that reach AEM: on publish, pages the dispatcher or CDN served "
+            + "from cache are not counted, so these are cache misses, not page views.");
         summary.put("byClass", top(requestsByClass, limit).stream()
             .map(e -> Map.of("class", e.getKey(), "requests", e.getValue())).toList());
         summary.put("byResourceType", top(rendersByResourceType, limit).stream()

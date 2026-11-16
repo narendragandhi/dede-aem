@@ -96,6 +96,7 @@ Options:
   --emit-otel-config <f>   Write an OpenTelemetry Java agent config for the classes that matter
   --otel-config <f>        With --runtime-traces: the config used, to report instrumented-but-never-called classes
   --request-log <f>        AEM request.log / access.log: attribute requests to servlets, components and models
+  --content <zip|json|url> With --request-log: the site's authored pages (package, QueryBuilder JSON, live URL)
   --error-log <f>          AEM error.log: tie WARN/ERROR entries to project classes and their findings
   --mcp                    After the scan, serve it to AI agents as an MCP server on stdio
   --extended-checks        Also run content-package, legacy-path and service-user checks (see below)
@@ -196,9 +197,27 @@ window only proves the code didn't run in that window.
 
 The JSON report gets a `requests` block (requests per class, renders per resource type,
 resource types with project code that never rendered, top unattributed paths) and class nodes
-get `runtime.requests`. Counts are estimated renders. Pages authored only in AEM (not in the
-repository) can't be resolved and stay unattributed. Because it reads AEM's own logs, this
-works on AEM as a Cloud Service too.
+get `runtime.requests`. Counts are estimated renders, and only of requests that reached AEM: on
+publish, pages the dispatcher or CDN served from cache never appear in AEM's logs or spans, so
+the counts are cache misses, not page views (use CDN logs for those). Because it reads AEM's own
+logs, this works on AEM as a Cloud Service too.
+
+**Pages authored in AEM.** The repository usually holds only seed content; on a real site most
+pages exist only in AEM, and their requests can't be resolved from the code alone. Add the site's
+content with `--content` (repeatable):
+
+```bash
+# A content package of /content/<site> (and /conf/<site>) from Package Manager:
+java -jar dede.jar ./my-aem-project --request-log request.log --content site-content.zip
+# Or QueryBuilder on a live instance -- credentials from DEDE_AEM_TOKEN (bearer, e.g. a Cloud
+# Service developer token) or DEDE_AEM_USER/DEDE_AEM_PASSWORD, never the command line:
+java -jar dede.jar ./my-aem-project --request-log request.log --content https://author.example.com/content/mysite
+# Or a saved QueryBuilder response (nodes.json).
+```
+
+Only node paths, resource types, templates and experience fragment references are read. On a
+WKND copy without its content modules, attribution went from 0 of 35 requests to 32 of 35 with
+the content package -- the same counts as with the content in the repository.
 
 **Errors from `error.log` (no agent needed).** `--error-log error.log` reads WARN and ERROR
 entries with their stack traces (AEM SDK/on-premise format, and Cloud Service downloads with the

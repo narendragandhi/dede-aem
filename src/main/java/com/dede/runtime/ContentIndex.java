@@ -26,8 +26,10 @@ import java.util.stream.Stream;
  * ({@code cq:template} -> {@code <template>/structure}, indexed from {@code jcr_root/conf}) and
  * any experience fragments it embeds ({@code fragmentVariationPath}). Both are followed.
  *
- * <p>Only content in the project is known. Production pages authored in AEM (not in the code
- * repository) are not -- their requests stay unattributed unless a path servlet handles them.
+ * <p>The repository only holds sample or seed content: on a real site most pages are authored in
+ * AEM. Those are added from the instance itself -- a content package exported from Package
+ * Manager ({@link #addPackage}), or a QueryBuilder listing of every node with a resource type,
+ * saved to a file or fetched live ({@link #addQueryBuilderHits}, {@link ContentSource}).
  */
 public final class ContentIndex {
 
@@ -61,16 +63,82 @@ public final class ContentIndex {
     }
 
     private void add(Path file) {
-        String normalized = file.toString().replace('\\', '/');
-        int root = normalized.indexOf("/jcr_root/content/");
-        if (root < 0) root = normalized.indexOf("/jcr_root/conf/");
-        if (root < 0) return;
-        String pagePath = normalized.substring(root + "/jcr_root".length(), normalized.length() - "/.content.xml".length());
+        String pagePath = jcrPath("/" + file.toString().replace('\\', '/'));
+        if (pagePath == null) return;
         try (var in = Files.newInputStream(file)) {
             addDocument(pagePath, parse(in));
         } catch (Exception e) {
             log.debug("Content index: skipping {}: {}", file, e.getMessage());
         }
+    }
+
+    /** JCR path of a {@code .../jcr_root/content|conf/.../.content.xml} file, or null. */
+    private static String jcrPath(String normalized) {
+        int root = normalized.indexOf("/jcr_root/content/");
+        if (root < 0) root = normalized.indexOf("/jcr_root/conf/");
+        if (root < 0 || !normalized.endsWith("/.content.xml")) return null;
+        return normalized.substring(root + "/jcr_root".length(), normalized.length() - "/.content.xml".length());
+    }
+
+    /**
+     * Adds the {@code /content} and {@code /conf} documents of a content package (a zip from
+     * Package Manager, or any FileVault package). Returns the number of documents read.
+     */
+    public int addPackage(Path zip) throws IOException {
+        int added = 0;
+        try (var in = new java.util.zip.ZipInputStream(Files.newInputStream(zip))) {
+            java.util.zip.ZipEntry entry;
+            while ((entry = in.getNextEntry()) != null) {
+                String pagePath = entry.isDirectory() ? null : jcrPath("/" + entry.getName());
+                if (pagePath == null) continue;
+                try {
+                    // parse() must not close the zip stream.
+                    addDocument(pagePath, parse(new java.io.ByteArrayInputStream(in.readAllBytes())));
+                    added++;
+                } catch (Exception e) {
+                    log.debug("Content index: skipping {} in {}: {}", entry.getName(), zip, e.getMessage());
+                }
+            }
+        }
+        lookups.clear();
+        return added;
+    }
+
+    /**
+     * Adds QueryBuilder hits: one per node, with {@code jcr:path}, {@code sling:resourceType} and
+     * optionally {@code cq:template} / {@code fragmentVariationPath}. Page grouping comes from the
+     * path: everything under {@code <page>/jcr:content} belongs to {@code <page>}. Returns the
+     * number of nodes added.
+     */
+    public int addQueryBuilderHits(com.fasterxml.jackson.databind.JsonNode response) {
+        int added = 0;
+        for (var hit : response.path("hits")) {
+            String path = hit.path("jcr:path").asText("");
+            if (path.isEmpty()) continue;
+            String page = pageOf(path);
+            String resourceType = hit.path("sling:resourceType").asText("");
+            if (!resourceType.isEmpty()) {
+                resourceTypeByNode.put(path, resourceType);
+                resourceTypesByPage.computeIfAbsent(page, k -> new LinkedHashSet<>()).add(resourceType);
+                added++;
+            }
+            String template = hit.path("cq:template").asText("");
+            if (template.startsWith("/conf/")) {
+                includesByPage.computeIfAbsent(page, k -> new LinkedHashSet<>()).add(template + "/structure");
+            }
+            String fragment = hit.path("fragmentVariationPath").asText("");
+            if (fragment.startsWith("/content/")) {
+                includesByPage.computeIfAbsent(page, k -> new LinkedHashSet<>()).add(fragment);
+            }
+        }
+        lookups.clear();
+        return added;
+    }
+
+    /** The page a node belongs to: the path before {@code /jcr:content}, or the node itself. */
+    static String pageOf(String nodePath) {
+        int content = nodePath.indexOf("/jcr:content");
+        return content > 0 ? nodePath.substring(0, content) : nodePath;
     }
 
     private static Element parse(java.io.InputStream in) throws Exception {

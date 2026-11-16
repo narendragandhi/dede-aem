@@ -20,6 +20,7 @@ import com.dede.runtime.RuntimeOverlay;
 import com.dede.runtime.ContentIndex;
 import com.dede.mcp.DedeTools;
 import com.dede.mcp.McpServer;
+import com.dede.runtime.ContentSource;
 import com.dede.runtime.ErrorAttribution;
 import com.dede.runtime.ErrorLogReader;
 import com.dede.runtime.RequestAttribution;
@@ -112,6 +113,7 @@ public class DedeApplication {
             String instrumentedConfigPath = null;
             String requestLogPath = null;
             String errorLogPath = null;
+            List<String> contentSources = new java.util.ArrayList<>();
             int otelMaxClasses = 50;
             String failOn = null;  // gate threshold; null = no gate
             boolean extendedChecks = false;
@@ -132,6 +134,9 @@ public class DedeApplication {
                 }
                 if ("--request-log".equals(args[i]) && i + 1 < args.length) {
                     requestLogPath = args[i + 1];
+                }
+                if ("--content".equals(args[i]) && i + 1 < args.length) {
+                    contentSources.add(args[i + 1]);
                 }
                 if ("--error-log".equals(args[i]) && i + 1 < args.length) {
                     errorLogPath = args[i + 1];
@@ -346,10 +351,21 @@ public class DedeApplication {
             }
             if (!requests.isEmpty()) {
                 ContentIndex content = ContentIndex.build(scanRoot);
+                for (String source : contentSources) {
+                    try {
+                        int added = ContentSource.addTo(content, source);
+                        log.info("Content: {} node(s)/document(s) added from {}", added, source);
+                    } catch (IOException | RuntimeException e) {
+                        // Attribution without the site's pages silently undercounts: stop instead.
+                        log.error("Failed to read content from {}: {}", source, e.getMessage());
+                        System.exit(SpringApplication.exit(context, () -> 2));
+                    }
+                }
                 requestAttribution = RequestAttribution.apply(requests, content, graphService);
                 log.info("Requests: {} total, {} attributed to project code ({} content page(s) indexed)",
                     requestAttribution.total(), requestAttribution.attributed(), content.pageCount());
                 requestAttribution.hotClasses(10).forEach(e -> log.info("  {} requests  {}", e.getValue(), e.getKey()));
+                log.info("  (counts requests that reached AEM: on publish, dispatcher/CDN cache hits are not included)");
                 List<String> neverRendered = requestAttribution.resourceTypesNeverRendered();
                 if (!neverRendered.isEmpty()) {
                     log.info("Resource types with project models/servlets never rendered: {}", neverRendered.size());
@@ -397,6 +413,10 @@ public class DedeApplication {
                     log.info("Blast radius: ranked by traffic observed at the reachable endpoints, then endpoint count.");
                 }
                 security.printReport();
+            }
+
+            if (requests.isEmpty() && !contentSources.isEmpty()) {
+                log.warn("--content is only used to attribute requests: add --request-log (or traces with HTTP server spans).");
             }
 
             if (otelConfigPath != null) {
@@ -493,7 +513,7 @@ public class DedeApplication {
         "--compare", "--bpa-report", "--sarif", "--suggestions", "--dependency-check-report",
         "--cloud-readiness", "--watch", "--json", "--fail-on-critical", "--fail-on", "--extended-checks",
         "--runtime-traces", "--emit-otel-config", "--otel-config", "--otel-max-classes",
-        "--request-log", "--error-log", "--mcp");
+        "--request-log", "--error-log", "--mcp", "--content");
 
     private static Map<String, Object> buildJsonReport(String projectPath, GraphService graphService,
                                                        CloudFindings findings, List<String> suggestions,
@@ -596,6 +616,7 @@ public class DedeApplication {
         log.info("  --runtime-traces <otlp.json>  Join OpenTelemetry traces (Collector file exporter) to the graph; ranks findings by runtime calls");
         log.info("  --emit-otel-config <path>     Write an OpenTelemetry Java agent config that instruments the classes that matter");
         log.info("  --request-log <path>          AEM request.log or access.log: attribute requests to servlets, pages, components and models");
+        log.info("  --content <zip|json|url>      With --request-log: the site's authored pages (content package, saved QueryBuilder JSON, or live AEM URL)");
         log.info("  --error-log <path>            AEM error.log: tie WARN/ERROR entries to project classes and their findings");
         log.info("  --mcp                         After the scan, serve it to AI agents as an MCP server on stdio (logs go to stderr)");
         log.info("  --otel-max-classes <n>        Class cap for --emit-otel-config (default 50)");

@@ -174,6 +174,10 @@ java -jar dede.jar ./my-aem-project --runtime-traces traces.json --json report.j
 What you get:
 - each finding in the JSON report carries `runtimeCalls`, the observed calls to its code
   (absent = not observed, which is not the same as dead unless the class was instrumented);
+- a finding inside a method also carries `runtimeMethod` and `runtimeMethodCalls`, the calls to
+  that method. "0" is only claimed when `--otel-config` shows the method was instrumented; hot
+  findings are ranked by the method's calls when known, so a finding in a never-called method of
+  a busy class doesn't rank as hot;
 - a `runtime` block with the trace window, the hottest classes (calls, errors, avg/max ms,
   per-method calls) and the hottest findings;
 - `runtime.calls`, `runtime.errors`, `runtime.avgMs`, `runtime.maxMs` properties on graph

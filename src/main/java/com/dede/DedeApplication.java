@@ -308,8 +308,9 @@ public class DedeApplication {
                         }
                     }
                     if (instrumentedConfigPath != null) {
-                        instrumentedNotCalled = runtime.instrumentedNotCalled(
-                            OtelConfigEmitter.readInstrumentedClasses(Path.of(instrumentedConfigPath)), graphService);
+                        var instrumented = OtelConfigEmitter.readInstrumentedMethods(Path.of(instrumentedConfigPath));
+                        runtime.setInstrumentedMethods(instrumented);
+                        instrumentedNotCalled = runtime.instrumentedNotCalled(instrumented.keySet(), graphService);
                         log.info("Instrumented but never called in a {} trace window: {} class(es)",
                             runtime.windowLabel(), instrumentedNotCalled.size());
                         instrumentedNotCalled.stream().limit(10).forEach(r -> log.info("  {} -- {}", r.get("class"), r.get("verdict")));
@@ -543,6 +544,11 @@ public class DedeApplication {
                 Map<String, Object> row = mapper.convertValue(f, LinkedHashMap.class);
                 Long calls = runtime != null ? runtime.callsFor(f) : null;
                 if (calls != null) row.put("runtimeCalls", calls);
+                Long methodCalls = runtime != null ? runtime.methodCallsFor(f) : null;
+                if (methodCalls != null) {
+                    row.put("runtimeMethod", runtime.enclosingMethod(f));
+                    row.put("runtimeMethodCalls", methodCalls);
+                }
                 Long logEntries = errorAttribution != null ? errorAttribution.entriesFor(f) : null;
                 if (logEntries != null) row.put("logEntries", logEntries);
                 violations.add(row);

@@ -92,6 +92,40 @@ class RuntimeOverlayTest {
     }
 
     @Test
+    void findingsAreJoinedToTheMethodTheyAreIn() {
+        RuntimeOverlay overlay = RuntimeOverlay.apply(List.of(
+            span("com.acme.TeaserModel", "getTitle", 1, false),
+            span("com.acme.TeaserModel", "getTitle", 1, false)), graph);
+        Finding inGetTitle = finding(modelFile, "HIGH");                 // line 3
+        Finding inGetLink = new Finding("forbidden-api", "DEPRECATED_WORKFLOW", "CRITICAL", modelFile.toString(), 4,
+            "m", null, null, null, null);
+        Finding outsideMethods = new Finding("forbidden-api", "DEPRECATED_WORKFLOW", "LOW", modelFile.toString(), 1,
+            "m", null, null, null, null);
+
+        assertThat(overlay.enclosingMethod(inGetTitle)).isEqualTo("getTitle");
+        assertThat(overlay.methodCallsFor(inGetTitle)).isEqualTo(2L);
+        assertThat(overlay.methodCallsFor(outsideMethods)).isNull();
+        // No spans for getLink, and nothing says it was instrumented: unknown, not 0.
+        assertThat(overlay.methodCallsFor(inGetLink)).isNull();
+        assertThat(overlay.callsFor(inGetLink)).as("class-level fallback").isEqualTo(2L);
+
+        overlay.setInstrumentedMethods(Map.of("com.acme.TeaserModel", java.util.Set.of("getTitle", "getLink")));
+        assertThat(overlay.methodCallsFor(inGetLink)).as("instrumented and never called").isEqualTo(0L);
+        assertThat(overlay.hotFindings(List.of(inGetTitle, inGetLink))).extracting(Map.Entry::getKey)
+            .as("a finding in a never-called method of a busy class is not hot").containsExactly(inGetTitle);
+    }
+
+    @Test
+    void readsInstrumentedMethodsFromTheAgentConfig() throws IOException {
+        Path config = dir.resolve("otel.properties");
+        Files.writeString(config, "otel.instrumentation.methods.include=com.acme.A[get,set];com.acme.B[run]\n");
+        assertThat(OtelConfigEmitter.readInstrumentedMethods(config))
+            .containsEntry("com.acme.A", java.util.Set.of("get", "set"))
+            .containsEntry("com.acme.B", java.util.Set.of("run"));
+        assertThat(OtelConfigEmitter.readInstrumentedClasses(config)).containsExactly("com.acme.A", "com.acme.B");
+    }
+
+    @Test
     void nestedAndAnonymousClassesRollUpToTheTopLevelClass() {
         RuntimeOverlay overlay = RuntimeOverlay.apply(List.of(
             span("com.acme.TeaserModel$Helper", "help", 1, false),

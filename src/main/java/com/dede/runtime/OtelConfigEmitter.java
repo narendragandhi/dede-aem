@@ -152,17 +152,30 @@ public final class OtelConfigEmitter {
      * never called" apart from "not instrumented".
      */
     public static Set<String> readInstrumentedClasses(Path configFile) throws java.io.IOException {
+        return readInstrumentedMethods(configFile).keySet();
+    }
+
+    /** Class name -> instrumented method names, from {@code otel.instrumentation.methods.include}. */
+    public static java.util.Map<String, Set<String>> readInstrumentedMethods(Path configFile) throws java.io.IOException {
         java.util.Properties props = new java.util.Properties();
         try (var in = java.nio.file.Files.newBufferedReader(configFile)) {
             props.load(in);
         }
         String include = props.getProperty("otel.instrumentation.methods.include", "");
-        Set<String> classes = new java.util.LinkedHashSet<>();
+        java.util.Map<String, Set<String>> classes = new java.util.LinkedHashMap<>();
         for (String entry : include.split(";")) {
             String trimmed = entry.trim();
             if (trimmed.isEmpty()) continue;
             int bracket = trimmed.indexOf('[');
-            classes.add(bracket > 0 ? trimmed.substring(0, bracket).trim() : trimmed);
+            Set<String> methods = new java.util.LinkedHashSet<>();
+            if (bracket > 0) {
+                int close = trimmed.indexOf(']', bracket);
+                for (String m : trimmed.substring(bracket + 1, close > 0 ? close : trimmed.length()).split(",")) {
+                    if (!m.isBlank()) methods.add(m.trim());
+                }
+            }
+            classes.computeIfAbsent(bracket > 0 ? trimmed.substring(0, bracket).trim() : trimmed,
+                k -> new java.util.LinkedHashSet<>()).addAll(methods);
         }
         if (classes.isEmpty()) {
             throw new java.io.IOException("no otel.instrumentation.methods.include entries in " + configFile);

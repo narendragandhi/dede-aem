@@ -83,6 +83,10 @@ request attribution (RequestLogReader, ContentIndex, RequestAttribution), and er
 attribution (ErrorLogReader, ErrorAttribution). Flags: `--runtime-traces`, `--emit-otel-config`,
 `--otel-config`, `--otel-max-classes`, `--request-log`, `--error-log`.
 
+`--mcp` serves a finished scan over stdio (`mcp/McpServer`: hand-rolled JSON-RPC, tools only;
+`mcp/DedeTools`: the tools). `main()` swaps `System.out` for stderr in that mode -- anything
+printed to the saved stdout breaks the protocol.
+
 Default scan exclusions live in `discovery/ScanExclusions.java`.
 
 All gates and reports read one set of findings: `cloud/CloudFindings` (catalog scan +

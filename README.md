@@ -97,6 +97,7 @@ Options:
   --otel-config <f>        With --runtime-traces: the config used, to report instrumented-but-never-called classes
   --request-log <f>        AEM request.log / access.log: attribute requests to servlets, components and models
   --error-log <f>          AEM error.log: tie WARN/ERROR entries to project classes and their findings
+  --mcp                    After the scan, serve it to AI agents as an MCP server on stdio
   --extended-checks        Also run content-package, legacy-path and service-user checks (see below)
   --security               Enable security surface audit
   --sarif <path.sarif.json> Export forbidden-API findings as SARIF 2.1.0
@@ -216,6 +217,19 @@ none (listed first, and raising the delta severity to at least MEDIUM), code no 
 rendered, counts that doubled or halved by at least 10, and average latency up or down 50% by at
 least 5 ms. A metric is compared only when both scans recorded it -- a scan without `--error-log`
 says nothing about log errors. Counts are raw, so compare windows of similar length.
+
+**MCP server for AI agents.** `--mcp` runs the scan (with any runtime flags), then serves it over
+stdio as a Model Context Protocol server. Logs go to stderr; stdout carries only the protocol.
+Tools: `summary` (finding counts, graph size, joined runtime sections), `list_findings` (filter
+by severity, category, file, or only code that ran), `class_info` (properties including
+`runtime.*`, findings, dependencies and dependents), `impact` (transitive dependents, busiest
+first), `search`. For Claude Code:
+
+```bash
+claude mcp add dede -- java -jar /path/to/dede.jar /path/to/aem-project --request-log /path/to/request.log --mcp
+```
+
+The scan is fixed for the life of the server; restart it to rescan.
 
 **Verified on a running AEM** (AEM SDK author, OpenTelemetry Java agent 2.10.0, Adobe's WKND):
 dede's generated config instrumented WKND's Sling Models inside their OSGi bundle, and

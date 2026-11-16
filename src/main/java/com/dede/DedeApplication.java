@@ -18,6 +18,8 @@ import com.dede.runtime.OtelConfigEmitter;
 import com.dede.runtime.OtlpTraceReader;
 import com.dede.runtime.RuntimeOverlay;
 import com.dede.runtime.ContentIndex;
+import com.dede.mcp.DedeTools;
+import com.dede.mcp.McpServer;
 import com.dede.runtime.ErrorAttribution;
 import com.dede.runtime.ErrorLogReader;
 import com.dede.runtime.RequestAttribution;
@@ -46,7 +48,16 @@ public class DedeApplication {
     private static final Logger log = LoggerFactory.getLogger(DedeApplication.class);
     private static final String VERSION = "2.0.0";
 
+    /** stdout as it was at startup: the MCP protocol channel in --mcp mode (logs go to stderr). */
+    private static java.io.PrintStream protocolOut = System.out;
+
     public static void main(String[] args) {
+        if (java.util.Arrays.asList(args).contains("--mcp")) {
+            // MCP over stdio: stdout carries JSON-RPC only. Everything else -- Spring's banner,
+            // the scan's log output -- goes to stderr, which MCP clients show as server logs.
+            protocolOut = System.out;
+            System.setOut(System.err);
+        }
         SpringApplication app = new SpringApplication(DedeApplication.class);
         if (isOneShotScan(args)) {
             // A CLI scan runs and exits: don't start the REST/GraphQL server (and its API-key
@@ -104,6 +115,7 @@ public class DedeApplication {
             int otelMaxClasses = 50;
             String failOn = null;  // gate threshold; null = no gate
             boolean extendedChecks = false;
+            boolean mcpMode = false;
 
             for (int i = 1; i < args.length; i++) {
                 if (args[i].startsWith("--") && !KNOWN_FLAGS.contains(args[i])) {
@@ -146,6 +158,9 @@ public class DedeApplication {
                         log.error("--fail-on: {}", e.getMessage());
                         System.exit(SpringApplication.exit(context, () -> 2));
                     }
+                }
+                if ("--mcp".equals(args[i])) {
+                    mcpMode = true;
                 }
                 if ("--extended-checks".equals(args[i])) {
                     extendedChecks = true;
@@ -261,7 +276,7 @@ public class DedeApplication {
             // JSON report and --fail-on / --fail-on-critical -- the same set the Maven plugin gates on.
             Path scanRoot = Path.of(projectPath);
             boolean needFindings = sarifOutputPath != null || jsonOutputPath != null || failOn != null
-                || runtimeTracesPath != null || otelConfigPath != null || errorLogPath != null;
+                || runtimeTracesPath != null || otelConfigPath != null || errorLogPath != null || mcpMode;
             CloudFindings findings = needFindings ? cloudFindings.collect(scanRoot, extendedChecks) : null;
 
             // Runtime overlay: OpenTelemetry traces joined to the code graph.
@@ -433,10 +448,12 @@ public class DedeApplication {
                 }
             }
 
+            Map<String, Object> report = jsonOutputPath != null || mcpMode
+                ? buildJsonReport(projectPath, graphService, findings, suggestions, runtime, instrumentedNotCalled,
+                    requestAttribution, errorAttribution, checkSecurity ? security.getBlastRadiusFindings() : null)
+                : null;
             if (jsonOutputPath != null) {
                 log.info("Writing JSON report: {}", jsonOutputPath);
-                Map<String, Object> report = buildJsonReport(projectPath, graphService, findings, suggestions, runtime, instrumentedNotCalled,
-                    requestAttribution, errorAttribution, checkSecurity ? security.getBlastRadiusFindings() : null);
                 ObjectMapper mapper = new ObjectMapper().enable(SerializationFeature.INDENT_OUTPUT);
                 try {
                     mapper.writeValue(new File(jsonOutputPath), report);
@@ -454,6 +471,14 @@ public class DedeApplication {
                 exitCode = 1;
             }
 
+            if (mcpMode) {
+                log.info("MCP server ready on stdio ({} findings, {} nodes). Tools: summary, list_findings, "
+                    + "class_info, impact, search.", findings.all().size(), graphService.getNodeCount());
+                new McpServer("dede", VERSION, new DedeTools(graphService, report).tools())
+                    .serve(System.in, protocolOut);
+                System.exit(SpringApplication.exit(context, () -> 0));
+            }
+
             if (watchMode) {
                 scanner.startWatching(projectPath);
             } else {
@@ -468,7 +493,7 @@ public class DedeApplication {
         "--compare", "--bpa-report", "--sarif", "--suggestions", "--dependency-check-report",
         "--cloud-readiness", "--watch", "--json", "--fail-on-critical", "--fail-on", "--extended-checks",
         "--runtime-traces", "--emit-otel-config", "--otel-config", "--otel-max-classes",
-        "--request-log", "--error-log");
+        "--request-log", "--error-log", "--mcp");
 
     private static Map<String, Object> buildJsonReport(String projectPath, GraphService graphService,
                                                        CloudFindings findings, List<String> suggestions,
@@ -572,6 +597,7 @@ public class DedeApplication {
         log.info("  --emit-otel-config <path>     Write an OpenTelemetry Java agent config that instruments the classes that matter");
         log.info("  --request-log <path>          AEM request.log or access.log: attribute requests to servlets, pages, components and models");
         log.info("  --error-log <path>            AEM error.log: tie WARN/ERROR entries to project classes and their findings");
+        log.info("  --mcp                         After the scan, serve it to AI agents as an MCP server on stdio (logs go to stderr)");
         log.info("  --otel-max-classes <n>        Class cap for --emit-otel-config (default 50)");
         log.info("  --otel-config <path>          With --runtime-traces: the agent config used, to report instrumented-but-never-called classes");
         log.info("  --extended-checks   Also run content-package (OakPal; needs 'mvn package' first), legacy-path and service-user checks");

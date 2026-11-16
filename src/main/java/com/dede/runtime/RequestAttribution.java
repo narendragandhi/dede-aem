@@ -2,6 +2,7 @@ package com.dede.runtime;
 
 import com.dede.domain.GraphService;
 import com.dede.domain.model.CodeNode;
+import com.dede.domain.model.ResourceTypes;
 import com.dede.domain.model.RelationshipType;
 import com.dede.runtime.RequestLogReader.RequestRecord;
 
@@ -85,7 +86,7 @@ public final class RequestAttribution {
                 for (CodeNode servlet : graph.getInboundRelatedNodes(node, RelationshipType.HANDLES_PATH)) {
                     pathServlets.add(new PathServlet(node.getName(), servlet));
                 }
-            } else if (id.startsWith("resType:") || id.startsWith("res:")) {
+            } else if (ResourceTypes.isResourceType(node)) {
                 String resourceType = node.getName();
                 for (CodeNode parent : graph.getRelatedNodes(node, RelationshipType.EXTENDS)) {
                     if (parent.getType() == node.getType()) result.superTypeOf.putIfAbsent(resourceType, parent.getName());
@@ -176,7 +177,7 @@ public final class RequestAttribution {
             if (node != null) node.getProperties().put(PROP_REQUESTS, Long.toString(count));
         });
         for (CodeNode node : graph.getAllNodes()) {
-            if (node.getId().startsWith("res:") || node.getId().startsWith("resType:")) {
+            if (ResourceTypes.isResourceType(node)) {
                 Long renders = result.rendersByResourceType.get(node.getName());
                 if (renders != null) node.getProperties().put(PROP_RENDERS, Long.toString(renders));
             }

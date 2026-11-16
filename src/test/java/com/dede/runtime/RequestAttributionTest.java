@@ -53,7 +53,7 @@ class RequestAttributionTest {
 
         // @SlingServletResourceTypes(resourceTypes="site/components/page", extensions="txt")
         CodeNode pageServlet = cls("com.acme.TxtServlet", NodeType.SLING_SERVLET);
-        graph.addEdge(pageServlet, node("resType:site/components/page", "site/components/page", NodeType.JCR_RESOURCE_TYPE),
+        graph.addEdge(pageServlet, node("res:site/components/page", "site/components/page", NodeType.JCR_RESOURCE_TYPE),
             RelationshipType.HANDLES_RESOURCE_TYPE);
         graph.addEdge(pageServlet, node("ext:txt", "txt", NodeType.SLING_EXTENSION), RelationshipType.HANDLES_EXTENSION);
         graph.addEdge(pageServlet, node("method:GET", "GET", NodeType.METHOD), RelationshipType.HANDLES_EXTENSION);
@@ -66,7 +66,7 @@ class RequestAttributionTest {
 
         // @Model(resourceType = "site/components/unused")
         graph.addEdge(cls("com.acme.UnusedModel", NodeType.SLING_MODEL),
-            node("resType:site/components/unused", "site/components/unused", NodeType.JCR_RESOURCE_TYPE),
+            node("res:site/components/unused", "site/components/unused", NodeType.JCR_RESOURCE_TYPE),
             RelationshipType.INSTANTIATED_BY);
 
         // @SlingServletPaths("/bin/acme/export")
@@ -125,7 +125,7 @@ class RequestAttributionTest {
         graph.addEdge(wide, graph.findNodeById("res:site/components/teaser").orElseThrow(), RelationshipType.EXTENDS);
         // A json servlet registered on the supertype also serves the subtype (servlet resolution walks it).
         CodeNode json = cls("com.acme.TeaserJsonServlet", NodeType.SLING_SERVLET);
-        graph.addEdge(json, node("resType:site/components/teaser", "site/components/teaser", NodeType.JCR_RESOURCE_TYPE),
+        graph.addEdge(json, node("res:site/components/teaser", "site/components/teaser", NodeType.JCR_RESOURCE_TYPE),
             RelationshipType.HANDLES_RESOURCE_TYPE);
         graph.addEdge(json, node("ext:json", "json", NodeType.SLING_EXTENSION), RelationshipType.HANDLES_EXTENSION);
         ContentIndex page;

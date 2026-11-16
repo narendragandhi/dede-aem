@@ -35,11 +35,11 @@ public class SlingResourceParser {
             String superType = root.getAttribute("sling:resourceSuperType");
 
             if (!resourceType.isEmpty()) {
-                CodeNode resNode = new CodeNode("res:" + resourceType, resourceType, NodeType.JCR_RESOURCE_TYPE, resourceType, contentXmlPath.toString());
+                CodeNode resNode = new CodeNode(com.dede.domain.model.ResourceTypes.nodeId(resourceType), resourceType, NodeType.JCR_RESOURCE_TYPE, resourceType, contentXmlPath.toString());
                 graphService.addNode(resNode);
 
                 if (!superType.isEmpty()) {
-                    CodeNode superNode = new CodeNode("res:" + superType, superType, NodeType.JCR_RESOURCE_TYPE, superType, null);
+                    CodeNode superNode = new CodeNode(com.dede.domain.model.ResourceTypes.nodeId(superType), superType, NodeType.JCR_RESOURCE_TYPE, superType, null);
                     graphService.addNode(superNode);
                     graphService.addEdge(resNode, superNode, RelationshipType.REFERENCES);
                 }

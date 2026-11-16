@@ -38,11 +38,13 @@ public class HtlParser implements ProjectParser {
                     CodeNode modelNode = new CodeNode("class:" + modelClass, modelClass, NodeType.SLING_MODEL, modelClass, null);
                     graphService.addNode(modelNode);
 
-                    // Find parent resource type by directory convention
-                    String parentPath = htlPath.getParent().toString();
-                    if (parentPath.contains("/components/")) {
-                        String resType = parentPath.substring(parentPath.indexOf("/components/") + 12);
-                        CodeNode resTypeNode = new CodeNode("resType:" + resType, resType, NodeType.JCR_RESOURCE_TYPE, resType, null);
+                    // The resource type is the folder path under /apps (wknd/components/byline);
+                    // taking only what follows /components/ gave "byline" -- a type nothing uses.
+                    String parentPath = htlPath.getParent().toString().replace('\\', '/');
+                    int apps = parentPath.lastIndexOf("/apps/");
+                    if (apps >= 0) {
+                        String resType = parentPath.substring(apps + "/apps/".length());
+                        CodeNode resTypeNode = new CodeNode(com.dede.domain.model.ResourceTypes.nodeId(resType), resType, NodeType.JCR_RESOURCE_TYPE, resType, null);
                         graphService.addEdge(resTypeNode, modelNode, RelationshipType.REFERENCES);
                     }
                 }

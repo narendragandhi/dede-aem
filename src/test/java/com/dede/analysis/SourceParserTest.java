@@ -119,8 +119,8 @@ class SourceParserTest {
 
         parser.parse(sourceFile);
 
-        assertThat(graphService.findNodeById("resType:site/components/byline")).isPresent();
-        assertThat(graphService.findNodeById("resType:BylineImpl.RESOURCE_TYPE")).isEmpty();
+        assertThat(graphService.findNodeById("res:site/components/byline")).isPresent();
+        assertThat(graphService.findNodeById("res:BylineImpl.RESOURCE_TYPE")).isEmpty();
     }
 
     @Test
@@ -137,6 +137,6 @@ class SourceParserTest {
 
         parser.parse(sourceFile);
 
-        assertThat(graphService.findNodeById("resType:Constants.TEASER")).isPresent();
+        assertThat(graphService.findNodeById("res:Constants.TEASER")).isPresent();
     }
 }

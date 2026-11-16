@@ -222,7 +222,7 @@ public class SourceParser implements ProjectParser {
 
             // Handle resourceType (singular - common in Core Components)
             getAttributeValues(a, "resourceType").forEach(resType -> {
-                CodeNode resTypeNode = new CodeNode("resType:" + resType, resType,
+                CodeNode resTypeNode = new CodeNode(com.dede.domain.model.ResourceTypes.nodeId(resType), resType,
                         NodeType.JCR_RESOURCE_TYPE, resType, null);
                 graphService.addNode(resTypeNode);
                 graphService.addEdge(classNode, resTypeNode, RelationshipType.INSTANTIATED_BY);

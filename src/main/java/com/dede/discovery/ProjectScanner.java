@@ -129,7 +129,7 @@ public class ProjectScanner {
         String path = dir.toString();
         if (path.contains("/apps/")) {
             String resType = path.substring(path.indexOf("/apps/") + 6);
-            CodeNode compNode = new CodeNode("res:" + resType, resType, NodeType.JCR_RESOURCE_TYPE, resType, path);
+            CodeNode compNode = new CodeNode(com.dede.domain.model.ResourceTypes.nodeId(resType), resType, NodeType.JCR_RESOURCE_TYPE, resType, path);
             graphService.addNode(compNode);
         }
     }

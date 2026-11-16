@@ -3,7 +3,7 @@
     {
       "annotationName": "Model",
       "attributeName": "resourceType",
-      "idPrefix": "resType:",
+      "idPrefix": "res:",
       "nodeType": "JCR_RESOURCE_TYPE",
       "relationship": "INSTANTIATED_BY"
     },
@@ -24,7 +24,7 @@
     {
       "annotationName": "SlingServletResourceTypes",
       "attributeName": "resourceTypes",
-      "idPrefix": "resType:",
+      "idPrefix": "res:",
       "nodeType": "JCR_RESOURCE_TYPE",
       "relationship": "HANDLES_RESOURCE_TYPE",
       "classType": "SLING_SERVLET"

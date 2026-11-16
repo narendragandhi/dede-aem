@@ -248,11 +248,8 @@ public final class DedeTools {
     }
 
     private static long traffic(CodeNode n) {
-        for (String key : List.of("runtime.requests", "runtime.renders", "runtime.calls")) {
-            long v = number(n.getProperties().get(key));
-            if (v > 0) return v;
-        }
-        return 0;
+        Long traffic = com.dede.domain.model.RuntimeMetrics.traffic(n);
+        return traffic == null ? 0 : traffic;
     }
 
     private static long number(Object raw) {

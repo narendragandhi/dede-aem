@@ -3,6 +3,7 @@ package com.dede.runtime;
 import com.dede.domain.GraphService;
 import com.dede.domain.model.CodeNode;
 import com.dede.domain.model.ResourceTypes;
+import com.dede.domain.model.RuntimeMetrics;
 import com.dede.domain.model.RelationshipType;
 import com.dede.runtime.RequestLogReader.RequestRecord;
 
@@ -28,9 +29,9 @@ import java.util.TreeMap;
  */
 public final class RequestAttribution {
 
-    public static final String PROP_REQUESTS = "runtime.requests";
+    public static final String PROP_REQUESTS = RuntimeMetrics.REQUESTS;
     /** On resource-type nodes: estimated renders of that component. */
-    public static final String PROP_RENDERS = "runtime.renders";
+    public static final String PROP_RENDERS = RuntimeMetrics.RENDERS;
 
     private record PathServlet(String path, CodeNode servlet) {}
 
@@ -174,12 +175,12 @@ public final class RequestAttribution {
 
         result.requestsByClass.forEach((signature, count) -> {
             CodeNode node = classById.get(signature);
-            if (node != null) node.getProperties().put(PROP_REQUESTS, Long.toString(count));
+            if (node != null) RuntimeMetrics.set(node, RuntimeMetrics.REQUESTS, count);
         });
         for (CodeNode node : graph.getAllNodes()) {
             if (ResourceTypes.isResourceType(node)) {
                 Long renders = result.rendersByResourceType.get(node.getName());
-                if (renders != null) node.getProperties().put(PROP_RENDERS, Long.toString(renders));
+                if (renders != null) RuntimeMetrics.set(node, RuntimeMetrics.RENDERS, renders);
             }
         }
         return result;

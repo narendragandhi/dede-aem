@@ -3,6 +3,7 @@ package com.dede.runtime;
 import com.dede.cloud.CloudFindings.Finding;
 import com.dede.domain.GraphService;
 import com.dede.domain.model.CodeNode;
+import com.dede.domain.model.RuntimeMetrics;
 import com.dede.runtime.ErrorLogReader.LogEntry;
 
 import java.nio.file.Path;
@@ -29,8 +30,8 @@ import java.util.regex.Pattern;
  */
 public final class ErrorAttribution {
 
-    public static final String PROP_LOG_ERRORS = "runtime.logErrors";
-    public static final String PROP_LOG_WARNINGS = "runtime.logWarnings";
+    public static final String PROP_LOG_ERRORS = RuntimeMetrics.LOG_ERRORS;
+    public static final String PROP_LOG_WARNINGS = RuntimeMetrics.LOG_WARNINGS;
 
     /** Digits, hex ids and UUIDs vary per occurrence; strip them so repeats group together. */
     private static final Pattern VOLATILE = Pattern.compile(
@@ -126,8 +127,8 @@ public final class ErrorAttribution {
 
         for (Map.Entry<String, ClassErrors> entry : byClassId.entrySet()) {
             graph.findNodeById(entry.getKey()).ifPresent(node -> {
-                node.getProperties().put(PROP_LOG_ERRORS, Long.toString(entry.getValue().errors()));
-                node.getProperties().put(PROP_LOG_WARNINGS, Long.toString(entry.getValue().warnings()));
+                RuntimeMetrics.set(node, RuntimeMetrics.LOG_ERRORS, entry.getValue().errors());
+                RuntimeMetrics.set(node, RuntimeMetrics.LOG_WARNINGS, entry.getValue().warnings());
             });
         }
 

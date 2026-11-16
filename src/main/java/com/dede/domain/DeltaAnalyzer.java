@@ -169,11 +169,9 @@ public class DeltaAnalyzer {
     }
 
     /** Runtime counters compared between snapshots (see com.dede.runtime). */
-    static final List<String> COUNT_METRICS = List.of(
-        "runtime.calls", "runtime.requests", "runtime.renders", "runtime.errors",
-        "runtime.logErrors", "runtime.logWarnings");
-    static final String LATENCY_METRIC = "runtime.avgMs";
-    private static final Set<String> ERROR_METRICS = Set.of("runtime.errors", "runtime.logErrors");
+    static final List<String> COUNT_METRICS = com.dede.domain.model.RuntimeMetrics.COUNTS;
+    static final String LATENCY_METRIC = com.dede.domain.model.RuntimeMetrics.AVG_MS;
+    private static final Set<String> ERROR_METRICS = Set.copyOf(com.dede.domain.model.RuntimeMetrics.FAILURES);
 
     /**
      * Changes in runtime counters for nodes present in both snapshots. A metric is compared only
@@ -222,13 +220,8 @@ public class DeltaAnalyzer {
     }
 
     private static double value(NodeSnapshot node, String metric) {
-        String raw = node.getRuntime().get(metric);
-        if (raw == null) return 0;
-        try {
-            return Double.parseDouble(raw);
-        } catch (NumberFormatException e) {
-            return 0;
-        }
+        Double value = com.dede.domain.model.RuntimeMetrics.parse(node.getRuntime().get(metric));
+        return value == null ? 0 : value;
     }
 
     /**
@@ -248,7 +241,7 @@ public class DeltaAnalyzer {
             ns.setType(node.getType().name());
             ns.setSignature(node.getSignature());
             node.getProperties().forEach((key, value) -> {
-                if (key.startsWith("runtime.")) ns.getRuntime().put(key, value);
+                if (key.startsWith(com.dede.domain.model.RuntimeMetrics.PREFIX)) ns.getRuntime().put(key, value);
             });
             snapshot.getNodes().add(ns);
         }
@@ -346,7 +339,7 @@ public class DeltaAnalyzer {
             sb.append("───────────────────────────────────────────────────────────\n");
             for (RuntimeChange c : report.getRuntimeChanges().subList(0, Math.min(10, report.getRuntimeChanges().size()))) {
                 sb.append(String.format("  %s %s %s: %s → %s\n", c.isNewErrors() ? "!" : "~", c.getName(),
-                    c.getMetric().substring("runtime.".length()), number(c.getOldValue()), number(c.getNewValue())));
+                    c.getMetric().substring(com.dede.domain.model.RuntimeMetrics.PREFIX.length()), number(c.getOldValue()), number(c.getNewValue())));
             }
             if (report.getRuntimeChanges().size() > 10) {
                 sb.append(String.format("  ... and %d more\n", report.getRuntimeChanges().size() - 10));

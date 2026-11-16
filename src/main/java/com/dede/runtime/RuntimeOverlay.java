@@ -3,6 +3,7 @@ package com.dede.runtime;
 import com.dede.cloud.CloudFindings.Finding;
 import com.dede.domain.GraphService;
 import com.dede.domain.model.CodeNode;
+import com.dede.domain.model.RuntimeMetrics;
 import com.dede.runtime.OtlpTraceReader.SpanRecord;
 
 import java.nio.file.Path;
@@ -25,10 +26,10 @@ import java.util.TreeMap;
  */
 public final class RuntimeOverlay {
 
-    public static final String PROP_CALLS = "runtime.calls";
-    public static final String PROP_ERRORS = "runtime.errors";
-    public static final String PROP_AVG_MS = "runtime.avgMs";
-    public static final String PROP_MAX_MS = "runtime.maxMs";
+    public static final String PROP_CALLS = RuntimeMetrics.CALLS;
+    public static final String PROP_ERRORS = RuntimeMetrics.ERRORS;
+    public static final String PROP_AVG_MS = RuntimeMetrics.AVG_MS;
+    public static final String PROP_MAX_MS = RuntimeMetrics.MAX_MS;
 
     /** Aggregated runtime behavior of one class. */
     public static final class ClassStats {
@@ -113,10 +114,10 @@ public final class RuntimeOverlay {
         for (Map.Entry<String, ClassStats> entry : matched.entrySet()) {
             graph.findNodeById(entry.getKey()).ifPresent(node -> {
                 ClassStats stats = entry.getValue();
-                node.getProperties().put(PROP_CALLS, Long.toString(stats.calls()));
-                node.getProperties().put(PROP_ERRORS, Long.toString(stats.errors()));
-                node.getProperties().put(PROP_AVG_MS, String.format(java.util.Locale.ROOT, "%.2f", stats.avgMs()));
-                node.getProperties().put(PROP_MAX_MS, String.format(java.util.Locale.ROOT, "%.2f", stats.maxMs()));
+                RuntimeMetrics.set(node, RuntimeMetrics.CALLS, stats.calls());
+                RuntimeMetrics.set(node, RuntimeMetrics.ERRORS, stats.errors());
+                RuntimeMetrics.set(node, RuntimeMetrics.AVG_MS, stats.avgMs());
+                RuntimeMetrics.set(node, RuntimeMetrics.MAX_MS, stats.maxMs());
             });
         }
 

@@ -233,9 +233,6 @@ public class DedeApplication {
                 governance.printViolations();
             }
 
-            if (checkSecurity) {
-                security.printReport();
-            }
 
             // Delta Analysis
             if (snapshotPath != null) {
@@ -379,6 +376,14 @@ public class DedeApplication {
                 }
             }
 
+            // Printed after the runtime data is joined, so blast radius can be weighted by traffic.
+            if (checkSecurity) {
+                if ((runtime != null || requestAttribution != null) && security.weightByRuntime(graphService.getGraph())) {
+                    log.info("Blast radius: ranked by traffic observed at the reachable endpoints, then endpoint count.");
+                }
+                security.printReport();
+            }
+
             if (otelConfigPath != null) {
                 int maxClasses = otelMaxClasses;
                 var selections = OtelConfigEmitter.select(graphService, findings.all(), maxClasses);
@@ -431,7 +436,7 @@ public class DedeApplication {
             if (jsonOutputPath != null) {
                 log.info("Writing JSON report: {}", jsonOutputPath);
                 Map<String, Object> report = buildJsonReport(projectPath, graphService, findings, suggestions, runtime, instrumentedNotCalled,
-                    requestAttribution, errorAttribution);
+                    requestAttribution, errorAttribution, checkSecurity ? security.getBlastRadiusFindings() : null);
                 ObjectMapper mapper = new ObjectMapper().enable(SerializationFeature.INDENT_OUTPUT);
                 try {
                     mapper.writeValue(new File(jsonOutputPath), report);
@@ -470,7 +475,8 @@ public class DedeApplication {
                                                        RuntimeOverlay runtime,
                                                        List<Map<String, Object>> instrumentedNotCalled,
                                                        RequestAttribution requestAttribution,
-                                                       ErrorAttribution errorAttribution) {
+                                                       ErrorAttribution errorAttribution,
+                                                       List<VulnerabilityService.BlastRadiusFinding> blastRadius) {
         Map<String, Object> graph = new LinkedHashMap<>();
         graph.put("nodes", graphService.getNodeCount());
         graph.put("edges", graphService.getEdgeCount());
@@ -511,6 +517,19 @@ public class DedeApplication {
         }
         if (errorAttribution != null) {
             report.put("logs", errorAttribution.summary(findings.all(), 20));
+        }
+        if (blastRadius != null) {
+            report.put("vulnerabilities", blastRadius.stream().map(b -> {
+                Map<String, Object> row = new LinkedHashMap<>();
+                row.put("cveId", b.cveId());
+                row.put("severity", b.severity());
+                row.put("cvssScore", b.cvssScore());
+                row.put("dependency", b.vulnerability().getProperties().get("dependency"));
+                row.put("blastRadius", b.blastRadius());
+                if (b.observedTraffic() != null) row.put("observedTraffic", b.observedTraffic());
+                row.put("endpoints", b.reachableEndpointIds());
+                return row;
+            }).toList());
         }
         report.put("suggestions", suggestions);
         return report;

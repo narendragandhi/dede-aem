@@ -262,6 +262,14 @@ Each CVE becomes a node in the dependency graph, linked to the JAR/OSGi bundle i
 
 A CVE reachable from 12 public-facing components is a materially different priority than one only reachable from an internal admin tool, even if the second one has a higher CVSS score.
 
+**Weighted by real traffic.** Add runtime data (`--request-log`, `--runtime-traces`) and the
+ranking uses the traffic observed at each CVE's reachable endpoints: requests per servlet,
+renders per component, or method calls, summed. Twelve endpoints nobody calls rank below one
+that serves every page. CVEs whose endpoints saw no traffic keep their static order, after the
+observed ones. With `--json`, the report gets a `vulnerabilities` list with `blastRadius`,
+`observedTraffic` and the endpoints. CVEs are linked to code through OSGi bundles, which come
+from built manifests -- run `mvn package` before scanning.
+
 ---
 
 ## Output Formats

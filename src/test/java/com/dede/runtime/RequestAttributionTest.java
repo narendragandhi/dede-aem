@@ -105,6 +105,8 @@ class RequestAttributionTest {
         assertThat(result.requestsFor("com.acme.TxtServlet")).isNull();
         assertThat(graph.findNodeById("class:com.acme.TeaserModel").orElseThrow().getProperties())
             .containsEntry(RequestAttribution.PROP_REQUESTS, "3");
+        assertThat(graph.findNodeById("res:site/components/teaser").orElseThrow().getProperties())
+            .containsEntry(RequestAttribution.PROP_RENDERS, "3");
     }
 
     @Test

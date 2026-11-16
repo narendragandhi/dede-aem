@@ -22,11 +22,14 @@ import java.util.TreeMap;
  *       types rendered, then to the Sling Models and resource-type servlets bound to them.</li>
  * </ul>
  * Counts are <em>estimated</em> renders: a page request counts once for every model on the
- * page, whether or not a given model method ran. Writes {@code runtime.requests} on class nodes.
+ * page, whether or not a given model method ran. Writes {@code runtime.requests} on class nodes
+ * and {@code runtime.renders} on resource-type nodes.
  */
 public final class RequestAttribution {
 
     public static final String PROP_REQUESTS = "runtime.requests";
+    /** On resource-type nodes: estimated renders of that component. */
+    public static final String PROP_RENDERS = "runtime.renders";
 
     private record PathServlet(String path, CodeNode servlet) {}
 
@@ -154,6 +157,12 @@ public final class RequestAttribution {
             CodeNode node = classById.get(signature);
             if (node != null) node.getProperties().put(PROP_REQUESTS, Long.toString(count));
         });
+        for (CodeNode node : graph.getAllNodes()) {
+            if (node.getId().startsWith("res:") || node.getId().startsWith("resType:")) {
+                Long renders = result.rendersByResourceType.get(node.getName());
+                if (renders != null) node.getProperties().put(PROP_RENDERS, Long.toString(renders));
+            }
+        }
         return result;
     }
 

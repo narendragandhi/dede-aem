@@ -79,8 +79,13 @@ Run `--help` for the full list (source of truth: `KNOWN_FLAGS` and `printHelp()`
 ```
 
 Runtime overlay lives in `runtime/`: OtlpTraceReader, RuntimeOverlay, OtelConfigEmitter, and
-request attribution (RequestLogReader, ContentIndex, RequestAttribution). Flags: `--runtime-traces`,
-`--emit-otel-config`, `--otel-config`, `--otel-max-classes`, `--request-log`.
+request attribution (RequestLogReader, ContentIndex, RequestAttribution), and error.log
+attribution (ErrorLogReader, ErrorAttribution). Flags: `--runtime-traces`, `--emit-otel-config`,
+`--otel-config`, `--otel-max-classes`, `--request-log`, `--error-log`.
+
+`--mcp` serves a finished scan over stdio (`mcp/McpServer`: hand-rolled JSON-RPC, tools only;
+`mcp/DedeTools`: the tools). `main()` swaps `System.out` for stderr in that mode -- anything
+printed to the saved stdout breaks the protocol.
 
 Default scan exclusions live in `discovery/ScanExclusions.java`.
 

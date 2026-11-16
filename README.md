@@ -96,6 +96,8 @@ Options:
   --emit-otel-config <f>   Write an OpenTelemetry Java agent config for the classes that matter
   --otel-config <f>        With --runtime-traces: the config used, to report instrumented-but-never-called classes
   --request-log <f>        AEM request.log / access.log: attribute requests to servlets, components and models
+  --error-log <f>          AEM error.log: tie WARN/ERROR entries to project classes and their findings
+  --mcp                    After the scan, serve it to AI agents as an MCP server on stdio
   --extended-checks        Also run content-package, legacy-path and service-user checks (see below)
   --security               Enable security surface audit
   --sarif <path.sarif.json> Export forbidden-API findings as SARIF 2.1.0
@@ -197,6 +199,38 @@ resource types with project code that never rendered, top unattributed paths) an
 get `runtime.requests`. Counts are estimated renders. Pages authored only in AEM (not in the
 repository) can't be resolved and stay unattributed. Because it reads AEM's own logs, this
 works on AEM as a Cloud Service too.
+
+**Errors from `error.log` (no agent needed).** `--error-log error.log` reads WARN and ERROR
+entries with their stack traces (AEM SDK/on-premise format, and Cloud Service downloads with the
+pod prefix). Each entry belongs to the topmost stack frame in project code -- so a model that
+throws inside Sling's model factory is blamed on the model -- or else to its logger when that is a
+project class; the rest is counted as platform noise. The JSON report gets a `logs` block: per
+class, ERROR/WARN counts, first/last seen, repeated messages grouped into signatures (numbers and
+ids stripped), and the request paths that triggered them (Sling names request threads after the
+URL); plus the findings in classes that logged errors, top exception types and top unattributed
+loggers. Each finding gets `logEntries`, and class nodes get `runtime.logErrors` /
+`runtime.logWarnings`. Scanning WKND together with a 10 MB AEM SDK error.log took 4 seconds.
+
+**Runtime data in snapshots.** With any of the runtime flags, `--snapshot` stores each node's
+`runtime.*` values, and `--compare` reports a RUNTIME CHANGES section: errors where there were
+none (listed first, and raising the delta severity to at least MEDIUM), code no longer called or
+rendered, counts that doubled or halved by at least 10, and average latency up or down 50% by at
+least 5 ms. A metric is compared only when both scans recorded it -- a scan without `--error-log`
+says nothing about log errors. Counts are raw, so compare windows of similar length.
+
+**MCP server for AI agents.** `--mcp` runs the scan (with any runtime flags), then serves it over
+stdio as a Model Context Protocol server. Logs go to stderr; stdout carries only the protocol.
+Tools: `summary` (finding counts, graph size, joined runtime sections), `list_findings` (filter
+by severity, category, file, or only code that ran), `class_info` (properties including
+`runtime.*`, findings, dependencies and dependents), `impact` (transitive dependents, busiest
+first), `search`. For Claude Code:
+
+```bash
+claude mcp add dede -- java -jar /path/to/dede.jar /path/to/aem-project --request-log /path/to/request.log --mcp
+```
+
+The scan is fixed for the life of the server; restart it to rescan.
+
 **Verified on a running AEM** (AEM SDK author, OpenTelemetry Java agent 2.10.0, Adobe's WKND):
 dede's generated config instrumented WKND's Sling Models inside their OSGi bundle, and
 request attribution from AEM's `request.log` matched the trace ground truth (trace ID -> URL ->
@@ -248,6 +282,14 @@ Each CVE becomes a node in the dependency graph, linked to the JAR/OSGi bundle i
 ```
 
 A CVE reachable from 12 public-facing components is a materially different priority than one only reachable from an internal admin tool, even if the second one has a higher CVSS score.
+
+**Weighted by real traffic.** Add runtime data (`--request-log`, `--runtime-traces`) and the
+ranking uses the traffic observed at each CVE's reachable endpoints: requests per servlet,
+renders per component, or method calls, summed. Twelve endpoints nobody calls rank below one
+that serves every page. CVEs whose endpoints saw no traffic keep their static order, after the
+observed ones. With `--json`, the report gets a `vulnerabilities` list with `blastRadius`,
+`observedTraffic` and the endpoints. CVEs are linked to code through OSGi bundles, which come
+from built manifests -- run `mvn package` before scanning.
 
 ---
 

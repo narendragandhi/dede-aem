@@ -60,8 +60,8 @@ src/main/java/com/dede/
 
 ## CLI Options
 
-Run `--help` for the full list (source of truth: `KNOWN_FLAGS` and `printHelp()` in
-`DedeApplication.java`). Most used:
+Run `--help` for the full list (source of truth: `cli/CliOptions.java`, which parses and
+validates every flag, and `printHelp()` in `DedeApplication.java`). Most used:
 
 ```
 --profiles <p1,p2>  Analysis profiles (default: aem)
@@ -86,6 +86,12 @@ attribution (ErrorLogReader, ErrorAttribution). Flags: `--runtime-traces`, `--em
 `--mcp` serves a finished scan over stdio (`mcp/McpServer`: hand-rolled JSON-RPC, tools only;
 `mcp/DedeTools`: the tools). `main()` swaps `System.out` for stderr in that mode -- anything
 printed to the saved stdout breaks the protocol.
+
+A scan runs in stages (`DedeApplication.runScan`): static scan, static analyses, findings,
+the runtime join (`cli/RuntimeJoin`, which writes `runtime.*` onto the graph), then everything
+that reads runtime data (snapshots, blast radius, reports, MCP). Metric names live only in
+`domain/model/RuntimeMetrics`; resource-type node ids only come from
+`domain/model/ResourceTypes.nodeId()` (one `res:` scheme).
 
 Default scan exclusions live in `discovery/ScanExclusions.java`.
 

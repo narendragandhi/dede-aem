@@ -3,6 +3,7 @@ package com.dede.runtime;
 import com.dede.cloud.CloudFindings.Finding;
 import com.dede.domain.GraphService;
 import com.dede.domain.model.CodeNode;
+import com.dede.domain.model.RuntimeMetrics;
 import com.dede.runtime.OtlpTraceReader.SpanRecord;
 
 import java.nio.file.Path;
@@ -25,10 +26,10 @@ import java.util.TreeMap;
  */
 public final class RuntimeOverlay {
 
-    public static final String PROP_CALLS = "runtime.calls";
-    public static final String PROP_ERRORS = "runtime.errors";
-    public static final String PROP_AVG_MS = "runtime.avgMs";
-    public static final String PROP_MAX_MS = "runtime.maxMs";
+    public static final String PROP_CALLS = RuntimeMetrics.CALLS;
+    public static final String PROP_ERRORS = RuntimeMetrics.ERRORS;
+    public static final String PROP_AVG_MS = RuntimeMetrics.AVG_MS;
+    public static final String PROP_MAX_MS = RuntimeMetrics.MAX_MS;
 
     /** Aggregated runtime behavior of one class. */
     public static final class ClassStats {
@@ -63,6 +64,11 @@ public final class RuntimeOverlay {
     private final Map<String, ClassStats> unmatched;    // class name -> stats (not in the scanned code)
     private final Map<Path, List<String>> nodeIdsByFile;
     private List<RequestLogReader.RequestRecord> serverRequests = List.of();
+    /** A method's source lines, for tying a finding to the method it is in. */
+    record MethodRange(String classId, String className, String method, int begin, int end) {}
+    private Map<Path, List<MethodRange>> methodsByFile = Map.of();
+    /** Class -> instrumented methods, from the agent config (--otel-config); empty when unknown. */
+    private Map<String, java.util.Set<String>> instrumentedMethods = Map.of();
     private final int totalSpans;
     private final int unattributedSpans;
     private final long windowStartNanos;
@@ -108,10 +114,10 @@ public final class RuntimeOverlay {
         for (Map.Entry<String, ClassStats> entry : matched.entrySet()) {
             graph.findNodeById(entry.getKey()).ifPresent(node -> {
                 ClassStats stats = entry.getValue();
-                node.getProperties().put(PROP_CALLS, Long.toString(stats.calls()));
-                node.getProperties().put(PROP_ERRORS, Long.toString(stats.errors()));
-                node.getProperties().put(PROP_AVG_MS, String.format(java.util.Locale.ROOT, "%.2f", stats.avgMs()));
-                node.getProperties().put(PROP_MAX_MS, String.format(java.util.Locale.ROOT, "%.2f", stats.maxMs()));
+                RuntimeMetrics.set(node, RuntimeMetrics.CALLS, stats.calls());
+                RuntimeMetrics.set(node, RuntimeMetrics.ERRORS, stats.errors());
+                RuntimeMetrics.set(node, RuntimeMetrics.AVG_MS, stats.avgMs());
+                RuntimeMetrics.set(node, RuntimeMetrics.MAX_MS, stats.maxMs());
             });
         }
 
@@ -124,6 +130,7 @@ public final class RuntimeOverlay {
 
         RuntimeOverlay overlay = new RuntimeOverlay(matched, unmatched, byFile, spans.size(), unattributed,
             windowStart == Long.MAX_VALUE ? 0 : windowStart, windowEnd);
+        overlay.methodsByFile = methodRanges(graph);
         overlay.serverRequests = spans.stream().filter(s -> s.httpPath() != null)
             .map(s -> new RequestLogReader.RequestRecord(null, s.httpPath(), s.httpStatus(), s.durationNanos() / 1_000_000))
             .toList();
@@ -163,11 +170,77 @@ public final class RuntimeOverlay {
         return seen ? calls : null;
     }
 
-    /** Findings whose code ran during the trace window, most-called first. */
+    private static Map<Path, List<MethodRange>> methodRanges(GraphService graph) {
+        Map<Path, List<MethodRange>> byFile = new HashMap<>();
+        for (CodeNode node : graph.getAllNodes()) {
+            String lines = node.getProperties().get(com.dede.discovery.SourceParser.PROP_LINES);
+            if (lines == null || node.getFilePath() == null || !node.getId().startsWith("method:")) continue;
+            String signature = node.getSignature();                    // a.b.C.m()
+            int dot = signature.lastIndexOf('.', signature.length() - 3);
+            if (dot < 0) continue;
+            String className = signature.substring(0, dot);
+            for (String range : lines.split(",")) {
+                String[] parts = range.split("-");
+                try {
+                    byFile.computeIfAbsent(normalize(node.getFilePath()), p -> new ArrayList<>()).add(new MethodRange(
+                        "class:" + className, className, node.getName(), Integer.parseInt(parts[0]), Integer.parseInt(parts[1])));
+                } catch (RuntimeException ignored) {
+                    // malformed range: no method-level data for it
+                }
+            }
+        }
+        return byFile;
+    }
+
+    /** The agent config's instrumented methods, so "0 calls" can be claimed for a method. */
+    public void setInstrumentedMethods(Map<String, java.util.Set<String>> instrumentedMethods) {
+        this.instrumentedMethods = instrumentedMethods;
+    }
+
+    /** The method a finding's line is in (innermost), or null for findings outside any method. */
+    public String enclosingMethod(Finding finding) {
+        MethodRange range = enclosing(finding);
+        return range == null ? null : range.method();
+    }
+
+    private MethodRange enclosing(Finding finding) {
+        if (finding.file() == null || finding.line() <= 0) return null;
+        MethodRange best = null;
+        for (MethodRange r : methodsByFile.getOrDefault(normalize(finding.file()), List.of())) {
+            if (finding.line() >= r.begin() && finding.line() <= r.end()
+                    && (best == null || r.end() - r.begin() < best.end() - best.begin())) {
+                best = r;
+            }
+        }
+        return best;
+    }
+
+    /**
+     * Observed calls to the method a finding is in. Null when unknown: the finding is outside a
+     * method, its class wasn't observed, or the method has no spans and the agent config (see
+     * {@link #setInstrumentedMethods}) doesn't show it was instrumented -- absence of spans from
+     * an uninstrumented method says nothing.
+     */
+    public Long methodCallsFor(Finding finding) {
+        MethodRange range = enclosing(finding);
+        if (range == null) return null;
+        ClassStats stats = matched.get(range.classId());
+        if (stats == null) return null;
+        Long calls = stats.callsByMethod().get(range.method());
+        if (calls != null) return calls;
+        return instrumentedMethods.getOrDefault(range.className(), java.util.Set.of()).contains(range.method()) ? 0L : null;
+    }
+
+    /**
+     * Findings whose code ran during the trace window, most-called first. A finding inside a
+     * method is ranked by that method's calls when known, so a finding in a never-called method
+     * of a busy class is not "hot".
+     */
     public List<Map.Entry<Finding, Long>> hotFindings(List<Finding> findings) {
         List<Map.Entry<Finding, Long>> hot = new ArrayList<>();
         for (Finding f : findings) {
-            Long calls = callsFor(f);
+            Long methodCalls = methodCallsFor(f);
+            Long calls = methodCalls != null ? methodCalls : callsFor(f);
             if (calls != null && calls > 0) hot.add(Map.entry(f, calls));
         }
         hot.sort(Map.Entry.<Finding, Long>comparingByValue().reversed());

@@ -28,6 +28,10 @@ import java.util.*;
 @Component
 public class SourceParser implements ProjectParser {
 
+    /** On method nodes: source line ranges, "begin-end[,begin-end...]" (several for overloads). */
+    public static final String PROP_LINES = "lines";
+
+
     private static final Logger log = LoggerFactory.getLogger(SourceParser.class);
 
     private final GraphService graphService;
@@ -218,7 +222,7 @@ public class SourceParser implements ProjectParser {
 
             // Handle resourceType (singular - common in Core Components)
             getAttributeValues(a, "resourceType").forEach(resType -> {
-                CodeNode resTypeNode = new CodeNode("resType:" + resType, resType,
+                CodeNode resTypeNode = new CodeNode(com.dede.domain.model.ResourceTypes.nodeId(resType), resType,
                         NodeType.JCR_RESOURCE_TYPE, resType, null);
                 graphService.addNode(resTypeNode);
                 graphService.addEdge(classNode, resTypeNode, RelationshipType.INSTANTIATED_BY);
@@ -337,6 +341,10 @@ public class SourceParser implements ProjectParser {
         String fullSignature = parentClass.getSignature() + "." + methodName + "()";
         CodeNode methodNode = new CodeNode("method:" + fullSignature, methodName, NodeType.METHOD, fullSignature, filePath);
         graphService.addNode(methodNode);
+        // Line range(s), so a finding can be tied to the method it is in. Overloads share one node.
+        CodeNode stored = graphService.findNodeById(methodNode.getId()).orElse(methodNode);
+        method.getRange().ifPresent(r -> stored.getProperties().merge(PROP_LINES,
+            r.begin.line + "-" + r.end.line, (a, b) -> a + "," + b));
         graphService.addEdge(parentClass, methodNode, RelationshipType.DECLARES);
 
         // Track method invocations (CALLS edges)

@@ -96,6 +96,7 @@ Options:
   --emit-otel-config <f>   Write an OpenTelemetry Java agent config for the classes that matter
   --otel-config <f>        With --runtime-traces: the config used, to report instrumented-but-never-called classes
   --request-log <f>        AEM request.log / access.log: attribute requests to servlets, components and models
+  --content <zip|json|url> With --request-log: the site's authored pages (package, QueryBuilder JSON, live URL)
   --error-log <f>          AEM error.log: tie WARN/ERROR entries to project classes and their findings
   --mcp                    After the scan, serve it to AI agents as an MCP server on stdio
   --extended-checks        Also run content-package, legacy-path and service-user checks (see below)
@@ -173,6 +174,10 @@ java -jar dede.jar ./my-aem-project --runtime-traces traces.json --json report.j
 What you get:
 - each finding in the JSON report carries `runtimeCalls`, the observed calls to its code
   (absent = not observed, which is not the same as dead unless the class was instrumented);
+- a finding inside a method also carries `runtimeMethod` and `runtimeMethodCalls`, the calls to
+  that method. "0" is only claimed when `--otel-config` shows the method was instrumented; hot
+  findings are ranked by the method's calls when known, so a finding in a never-called method of
+  a busy class doesn't rank as hot;
 - a `runtime` block with the trace window, the hottest classes (calls, errors, avg/max ms,
   per-method calls) and the hottest findings;
 - `runtime.calls`, `runtime.errors`, `runtime.avgMs`, `runtime.maxMs` properties on graph
@@ -193,12 +198,36 @@ window only proves the code didn't run in that window.
   page, then to the Sling Models (`@Model(resourceType)` or HTL `data-sly-use`) and
   `@SlingServletResourceTypes` servlets bound to them -- honoring the servlet's selectors and
   extensions, and counting a page as rendered only when no servlet took the request.
+- following Sling's resource supertypes: a component with no script or model of its own renders
+  through its nearest project supertype, and servlets registered on a supertype also serve its
+  subtypes;
+- resolving vanity URLs (`sling:vanityPath`) to their page, and shortened URLs (`/us/en.html` for
+  `/content/site/us/en`, as `/etc/map` publishes them) when exactly one page matches -- with two
+  sites of the same structure the request stays unattributed rather than guessed.
 
 The JSON report gets a `requests` block (requests per class, renders per resource type,
 resource types with project code that never rendered, top unattributed paths) and class nodes
-get `runtime.requests`. Counts are estimated renders. Pages authored only in AEM (not in the
-repository) can't be resolved and stay unattributed. Because it reads AEM's own logs, this
-works on AEM as a Cloud Service too.
+get `runtime.requests`. Counts are estimated renders, and only of requests that reached AEM: on
+publish, pages the dispatcher or CDN served from cache never appear in AEM's logs or spans, so
+the counts are cache misses, not page views (use CDN logs for those). Because it reads AEM's own
+logs, this works on AEM as a Cloud Service too.
+
+**Pages authored in AEM.** The repository usually holds only seed content; on a real site most
+pages exist only in AEM, and their requests can't be resolved from the code alone. Add the site's
+content with `--content` (repeatable):
+
+```bash
+# A content package of /content/<site> (and /conf/<site>) from Package Manager:
+java -jar dede.jar ./my-aem-project --request-log request.log --content site-content.zip
+# Or QueryBuilder on a live instance -- credentials from DEDE_AEM_TOKEN (bearer, e.g. a Cloud
+# Service developer token) or DEDE_AEM_USER/DEDE_AEM_PASSWORD, never the command line:
+java -jar dede.jar ./my-aem-project --request-log request.log --content https://author.example.com/content/mysite
+# Or a saved QueryBuilder response (nodes.json).
+```
+
+Only node paths, resource types, templates and experience fragment references are read. On a
+WKND copy without its content modules, attribution went from 0 of 35 requests to 32 of 35 with
+the content package -- the same counts as with the content in the repository.
 
 **Errors from `error.log` (no agent needed).** `--error-log error.log` reads WARN and ERROR
 entries with their stack traces (AEM SDK/on-premise format, and Cloud Service downloads with the

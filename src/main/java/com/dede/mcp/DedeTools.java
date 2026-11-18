@@ -186,7 +186,7 @@ public final class DedeTools {
         List<String> direct = g.incomingEdgesOf(node).stream()
             .filter(r -> !STRUCTURAL.contains(r.getType()))
             .map(r -> g.getEdgeSource(r).getId()).distinct().sorted().toList();
-        Set<CodeNode> transitive = graph.getTransitiveIncomingNodes(node);
+        Set<CodeNode> transitive = dependents(g, node);
         Map<String, Long> byType = new TreeMap<>();
         transitive.forEach(n -> byType.merge(n.getType().name(), 1L, Long::sum));
         Map<String, Object> out = new LinkedHashMap<>();
@@ -207,6 +207,23 @@ public final class DedeTools {
                 return row;
             }).toList());
         return out;
+    }
+
+    /**
+     * Everything that depends on {@code node}, transitively, over dependency edges only: the
+     * package or bundle a class sits in contains it, it doesn't depend on it.
+     */
+    private static Set<CodeNode> dependents(Graph<CodeNode, Relationship> g, CodeNode node) {
+        Set<CodeNode> seen = new java.util.LinkedHashSet<>();
+        java.util.ArrayDeque<CodeNode> queue = new java.util.ArrayDeque<>(List.of(node));
+        while (!queue.isEmpty()) {
+            for (Relationship r : g.incomingEdgesOf(queue.poll())) {
+                if (STRUCTURAL.contains(r.getType())) continue;
+                CodeNode source = g.getEdgeSource(r);
+                if (!source.equals(node) && seen.add(source)) queue.add(source);
+            }
+        }
+        return seen;
     }
 
     private Object search(JsonNode args) {
@@ -248,11 +265,8 @@ public final class DedeTools {
     }
 
     private static long traffic(CodeNode n) {
-        for (String key : List.of("runtime.requests", "runtime.renders", "runtime.calls")) {
-            long v = number(n.getProperties().get(key));
-            if (v > 0) return v;
-        }
-        return 0;
+        Long traffic = com.dede.domain.model.RuntimeMetrics.traffic(n);
+        return traffic == null ? 0 : traffic;
     }
 
     private static long number(Object raw) {

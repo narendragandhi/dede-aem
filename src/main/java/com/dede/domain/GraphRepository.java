@@ -17,14 +17,25 @@ import java.util.stream.Collectors;
 @Repository
 public class GraphRepository {
     private final Graph<CodeNode, Relationship> graph;
+    /** id -> the vertex stored in the graph: node lookups run per span, per log entry, per request. */
+    private final java.util.Map<String, CodeNode> byId = new java.util.concurrent.ConcurrentHashMap<>();
 
     public GraphRepository() {
         this.graph = new DirectedMultigraph<>(Relationship.class);
     }
 
+    /**
+     * Adds {@code node}, or -- when a node with its id exists (several parsers describe the same
+     * resource type or class) -- merges its properties into the stored one without overwriting.
+     * Before this merge, the second description's properties were silently dropped.
+     */
     public synchronized void addNode(CodeNode node) {
-        if (!graph.containsVertex(node)) {
+        CodeNode stored = findNodeById(node.getId()).orElse(null);
+        if (stored == null) {
             graph.addVertex(node);
+            byId.put(node.getId(), node);
+        } else if (stored != node) {
+            node.getProperties().forEach(stored.getProperties()::putIfAbsent);
         }
     }
 
@@ -40,6 +51,7 @@ public class GraphRepository {
                 .collect(Collectors.toSet());
         
         graph.removeAllVertices(nodesToRemove);
+        nodesToRemove.forEach(n -> byId.remove(n.getId()));
     }
 
     public synchronized Relationship addEdge(CodeNode source, CodeNode target, RelationshipType type, int confidence) {
@@ -73,8 +85,13 @@ public class GraphRepository {
     }
 
     public Optional<CodeNode> findNodeById(String id) {
-        return graph.vertexSet().stream()
-                .filter(node -> node.getId().equals(id))
-                .findFirst();
+        // getGraph() is public, so the graph can change behind the index: resync when it has.
+        if (byId.size() != graph.vertexSet().size()) {
+            synchronized (this) {
+                byId.clear();
+                graph.vertexSet().forEach(n -> byId.put(n.getId(), n));
+            }
+        }
+        return Optional.ofNullable(byId.get(id));
     }
 }

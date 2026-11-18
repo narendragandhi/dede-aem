@@ -53,7 +53,7 @@ class RequestAttributionTest {
 
         // @SlingServletResourceTypes(resourceTypes="site/components/page", extensions="txt")
         CodeNode pageServlet = cls("com.acme.TxtServlet", NodeType.SLING_SERVLET);
-        graph.addEdge(pageServlet, node("resType:site/components/page", "site/components/page", NodeType.JCR_RESOURCE_TYPE),
+        graph.addEdge(pageServlet, node("res:site/components/page", "site/components/page", NodeType.JCR_RESOURCE_TYPE),
             RelationshipType.HANDLES_RESOURCE_TYPE);
         graph.addEdge(pageServlet, node("ext:txt", "txt", NodeType.SLING_EXTENSION), RelationshipType.HANDLES_EXTENSION);
         graph.addEdge(pageServlet, node("method:GET", "GET", NodeType.METHOD), RelationshipType.HANDLES_EXTENSION);
@@ -66,7 +66,7 @@ class RequestAttributionTest {
 
         // @Model(resourceType = "site/components/unused")
         graph.addEdge(cls("com.acme.UnusedModel", NodeType.SLING_MODEL),
-            node("resType:site/components/unused", "site/components/unused", NodeType.JCR_RESOURCE_TYPE),
+            node("res:site/components/unused", "site/components/unused", NodeType.JCR_RESOURCE_TYPE),
             RelationshipType.INSTANTIATED_BY);
 
         // @SlingServletPaths("/bin/acme/export")
@@ -116,6 +116,72 @@ class RequestAttributionTest {
         assertThat(result.requestsFor("com.acme.TxtServlet")).isEqualTo(2L);
         // Sling dispatched to the servlet: the page's components did not render.
         assertThat(result.requestsFor("com.acme.TeaserModel")).isNull();
+    }
+
+    @Test
+    void componentsWithoutTheirOwnScriptRenderThroughTheirSupertype() {
+        // site/components/teaser-wide: sling:resourceSuperType=site/components/teaser, no HTL of its own.
+        CodeNode wide = node("res:site/components/teaser-wide", "site/components/teaser-wide", NodeType.JCR_RESOURCE_TYPE);
+        graph.addEdge(wide, graph.findNodeById("res:site/components/teaser").orElseThrow(), RelationshipType.EXTENDS);
+        // A json servlet registered on the supertype also serves the subtype (servlet resolution walks it).
+        CodeNode json = cls("com.acme.TeaserJsonServlet", NodeType.SLING_SERVLET);
+        graph.addEdge(json, node("res:site/components/teaser", "site/components/teaser", NodeType.JCR_RESOURCE_TYPE),
+            RelationshipType.HANDLES_RESOURCE_TYPE);
+        graph.addEdge(json, node("ext:json", "json", NodeType.SLING_EXTENSION), RelationshipType.HANDLES_EXTENSION);
+        ContentIndex page;
+        try {
+            page = ContentIndex.of("/content/site/wide", """
+                <jcr:root xmlns:jcr="http://www.jcp.org/jcr/1.0" xmlns:sling="http://sling.apache.org/jcr/sling/1.0">
+                  <jcr:content sling:resourceType="site/components/page">
+                    <hero sling:resourceType="site/components/teaser-wide"/>
+                  </jcr:content>
+                </jcr:root>
+                """);
+        } catch (Exception e) {
+            throw new AssertionError(e);
+        }
+
+        RequestAttribution result = RequestAttribution.apply(List.of(get("/content/site/wide.html"),
+            get("/content/site/wide/jcr:content/hero.json")), page, graph);
+
+        assertThat(result.requestsFor("com.acme.TeaserModel")).as("inherited HTL model").isEqualTo(1L);
+        assertThat(result.requestsFor("com.acme.TeaserJsonServlet")).as("servlet on the supertype").isEqualTo(1L);
+        assertThat(result.resourceTypesNeverRendered()).as("teaser rendered through teaser-wide")
+            .doesNotContain("site/components/teaser");
+    }
+
+    @Test
+    void vanityUrlsRenderTheirPage() throws Exception {
+        ContentIndex promo = ContentIndex.of("/content/site/en/promo-2026", """
+            <jcr:root xmlns:jcr="http://www.jcp.org/jcr/1.0" xmlns:sling="http://sling.apache.org/jcr/sling/1.0">
+              <jcr:content sling:resourceType="site/components/page" sling:vanityPath="[/promo,summer]">
+                <teaser sling:resourceType="site/components/teaser"/>
+              </jcr:content>
+            </jcr:root>
+            """);
+
+        RequestAttribution result = RequestAttribution.apply(List.of(get("/promo"), get("/summer.html"), get("/nope")),
+            promo, graph);
+
+        assertThat(result.requestsFor("com.acme.TeaserModel")).isEqualTo(2L);
+        assertThat(result.attributed()).isEqualTo(2);
+    }
+
+    @Test
+    void shortenedUrlsResolveOnlyWhenUnambiguous() {
+        // /content/site/en is the only page ending in /en: /en.html is it, /etc/map style.
+        RequestAttribution one = RequestAttribution.apply(List.of(get("/en.html"), get("/fr.html")), content, graph);
+        assertThat(one.requestsFor("com.acme.TeaserModel")).isEqualTo(1L);
+        assertThat(one.attributed()).isEqualTo(1);
+    }
+
+    @Test
+    void shortenedUrlsMatchingTwoSitesStayUnattributed() throws Exception {
+        content.addQueryBuilderHits(new com.fasterxml.jackson.databind.ObjectMapper().readTree("""
+            {"hits":[{"jcr:path":"/content/other/en/jcr:content","sling:resourceType":"site/components/page"}]}
+            """));
+        RequestAttribution result = RequestAttribution.apply(List.of(get("/en.html")), content, graph);
+        assertThat(result.attributed()).as("/en could be either site").isZero();
     }
 
     @Test

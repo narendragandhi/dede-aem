@@ -13,6 +13,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Stream;
@@ -26,8 +27,10 @@ import java.util.stream.Stream;
  * ({@code cq:template} -> {@code <template>/structure}, indexed from {@code jcr_root/conf}) and
  * any experience fragments it embeds ({@code fragmentVariationPath}). Both are followed.
  *
- * <p>Only content in the project is known. Production pages authored in AEM (not in the code
- * repository) are not -- their requests stay unattributed unless a path servlet handles them.
+ * <p>The repository only holds sample or seed content: on a real site most pages are authored in
+ * AEM. Those are added from the instance itself -- a content package exported from Package
+ * Manager ({@link #addPackage}), or a QueryBuilder listing of every node with a resource type,
+ * saved to a file or fetched live ({@link #addQueryBuilderHits}, {@link ContentSource}).
  */
 public final class ContentIndex {
 
@@ -40,6 +43,8 @@ public final class ContentIndex {
     /** Page path -> paths it pulls in at render time (template structure, experience fragments). */
     private final Map<String, Set<String>> includesByPage = new HashMap<>();
     private static final int MAX_INCLUDE_DEPTH = 5;
+    /** sling:vanityPath -> the page that declares it. */
+    private final Map<String, String> pageByVanityPath = new HashMap<>();
 
     public static ContentIndex build(Path projectRoot) {
         ContentIndex index = new ContentIndex();
@@ -61,16 +66,119 @@ public final class ContentIndex {
     }
 
     private void add(Path file) {
-        String normalized = file.toString().replace('\\', '/');
-        int root = normalized.indexOf("/jcr_root/content/");
-        if (root < 0) root = normalized.indexOf("/jcr_root/conf/");
-        if (root < 0) return;
-        String pagePath = normalized.substring(root + "/jcr_root".length(), normalized.length() - "/.content.xml".length());
+        String pagePath = jcrPath("/" + file.toString().replace('\\', '/'));
+        if (pagePath == null) return;
         try (var in = Files.newInputStream(file)) {
             addDocument(pagePath, parse(in));
         } catch (Exception e) {
             log.debug("Content index: skipping {}: {}", file, e.getMessage());
         }
+    }
+
+    /** JCR path of a {@code .../jcr_root/content|conf/.../.content.xml} file, or null. */
+    private static String jcrPath(String normalized) {
+        int root = normalized.indexOf("/jcr_root/content/");
+        if (root < 0) root = normalized.indexOf("/jcr_root/conf/");
+        if (root < 0 || !normalized.endsWith("/.content.xml")) return null;
+        return normalized.substring(root + "/jcr_root".length(), normalized.length() - "/.content.xml".length());
+    }
+
+    /**
+     * Adds the {@code /content} and {@code /conf} documents of a content package (a zip from
+     * Package Manager, or any FileVault package). Returns the number of documents read.
+     */
+    public int addPackage(Path zip) throws IOException {
+        int added = 0;
+        try (var in = new java.util.zip.ZipInputStream(Files.newInputStream(zip))) {
+            java.util.zip.ZipEntry entry;
+            while ((entry = in.getNextEntry()) != null) {
+                String pagePath = entry.isDirectory() ? null : jcrPath("/" + entry.getName());
+                if (pagePath == null) continue;
+                try {
+                    // parse() must not close the zip stream.
+                    addDocument(pagePath, parse(new java.io.ByteArrayInputStream(in.readAllBytes())));
+                    added++;
+                } catch (Exception e) {
+                    log.debug("Content index: skipping {} in {}: {}", entry.getName(), zip, e.getMessage());
+                }
+            }
+        }
+        lookups.clear();
+        return added;
+    }
+
+    /**
+     * Adds QueryBuilder hits: one per node, with {@code jcr:path}, {@code sling:resourceType} and
+     * optionally {@code cq:template} / {@code fragmentVariationPath}. Page grouping comes from the
+     * path: everything under {@code <page>/jcr:content} belongs to {@code <page>}. Returns the
+     * number of nodes added.
+     */
+    public int addQueryBuilderHits(com.fasterxml.jackson.databind.JsonNode response) {
+        int added = 0;
+        for (var hit : response.path("hits")) {
+            String path = hit.path("jcr:path").asText("");
+            if (path.isEmpty()) continue;
+            String page = pageOf(path);
+            String resourceType = hit.path("sling:resourceType").asText("");
+            if (!resourceType.isEmpty()) {
+                resourceTypeByNode.put(path, resourceType);
+                resourceTypesByPage.computeIfAbsent(page, k -> new LinkedHashSet<>()).add(resourceType);
+                added++;
+            }
+            String template = hit.path("cq:template").asText("");
+            if (template.startsWith("/conf/")) {
+                includesByPage.computeIfAbsent(page, k -> new LinkedHashSet<>()).add(template + "/structure");
+            }
+            String fragment = hit.path("fragmentVariationPath").asText("");
+            if (fragment.startsWith("/content/")) {
+                includesByPage.computeIfAbsent(page, k -> new LinkedHashSet<>()).add(fragment);
+            }
+            var vanity = hit.path("sling:vanityPath");
+            if (vanity.isArray()) vanity.forEach(v -> addVanity(v.asText(""), path));
+            else addVanity(vanity.asText(""), path);
+        }
+        lookups.clear();
+        return added;
+    }
+
+    /** Vanity paths are multi-valued in JCR; docview writes them as "[/a,/b]". */
+    private void addVanity(String raw, String nodePath) {
+        if (raw == null || raw.isBlank()) return;
+        String page = pageOf(nodePath);
+        String values = raw.startsWith("[") && raw.endsWith("]") ? raw.substring(1, raw.length() - 1) : raw;
+        for (String vanity : values.split(",")) {
+            String v = vanity.strip();
+            if (v.isEmpty()) continue;
+            pageByVanityPath.putIfAbsent(v.startsWith("/") ? v : "/" + v, page);
+        }
+    }
+
+    private final Map<String, java.util.Optional<String>> shortened = new HashMap<>();
+
+    /**
+     * The page a shortened URL path maps to -- {@code /us/en} for {@code /content/site/us/en}, as
+     * {@code /etc/map} or resource resolver mappings commonly publish it -- when exactly one indexed
+     * page ends with it. Null when none or several do (two sites with the same structure): a guess
+     * would attribute traffic to the wrong site.
+     */
+    public String pageForShortenedPath(String path) {
+        if (path.startsWith("/content/") || path.startsWith("/conf/") || path.length() < 2) return null;
+        return shortened.computeIfAbsent(path, p -> {
+            List<String> matches = resourceTypesByPage.keySet().stream()
+                .filter(page -> page.startsWith("/content/") && page.endsWith(p)).limit(2).toList();
+            return matches.size() == 1 ? java.util.Optional.of(matches.get(0)) : java.util.Optional.empty();
+        }).orElse(null);
+    }
+
+    /** The page a vanity path ({@code /promo}) points to, or null. */
+    public String pageForVanityPath(String path) {
+        return pageByVanityPath.get(path);
+    }
+
+    /** The page a node belongs to: the path before {@code /jcr:content}, or the node itself. */
+    static String pageOf(String nodePath) {
+        int content = nodePath.indexOf("/jcr:content");
+        return content > 0 ? nodePath.substring(0, content) : nodePath;
     }
 
     private static Element parse(java.io.InputStream in) throws Exception {
@@ -110,6 +218,7 @@ public final class ContentIndex {
         if (fragment.startsWith("/content/")) {
             includes.add(fragment);
         }
+        addVanity(element.getAttribute("sling:vanityPath"), nodePath);
         for (Node child = element.getFirstChild(); child != null; child = child.getNextSibling()) {
             if (child instanceof Element childElement) {
                 walk(childElement, nodePath + "/" + childElement.getTagName(), onPage, includes);

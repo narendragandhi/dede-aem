@@ -242,7 +242,7 @@ public class SlingHtlParser {
             int lastSlash = afterApps.lastIndexOf('/');
             if (lastSlash > 0) {
                 String resType = afterApps.substring(0, lastSlash);
-                CodeNode componentNode = new CodeNode("res:" + resType, resType,
+                CodeNode componentNode = new CodeNode(com.dede.domain.model.ResourceTypes.nodeId(resType), resType,
                     NodeType.JCR_RESOURCE_TYPE, resType, null);
                 graphService.addNode(componentNode);
 
@@ -404,7 +404,7 @@ public class SlingHtlParser {
      * Creates a REFERENCES edge from HTL to a resource type.
      */
     private void createResourceTypeReference(CodeNode htlNode, String resType) {
-        CodeNode resNode = new CodeNode("res:" + resType, resType,
+        CodeNode resNode = new CodeNode(com.dede.domain.model.ResourceTypes.nodeId(resType), resType,
             NodeType.JCR_RESOURCE_TYPE, resType, null);
         graphService.addNode(resNode);
         graphService.addEdge(htlNode, resNode, RelationshipType.REFERENCES);

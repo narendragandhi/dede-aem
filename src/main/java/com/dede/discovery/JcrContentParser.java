@@ -50,7 +50,7 @@ public class JcrContentParser implements ProjectParser {
 
             if (resourceTypeAttr != null) {
                 String resourceType = resourceTypeAttr.getNodeValue();
-                CodeNode resTypeNode = new CodeNode("resType:" + resourceType, resourceType, NodeType.JCR_RESOURCE_TYPE, resourceType, null);
+                CodeNode resTypeNode = new CodeNode(com.dede.domain.model.ResourceTypes.nodeId(resourceType), resourceType, NodeType.JCR_RESOURCE_TYPE, resourceType, null);
                 graphService.addNode(resTypeNode);
 
                 // Create a node for this specific content instance
@@ -92,14 +92,14 @@ public class JcrContentParser implements ProjectParser {
                     }
 
                     // Create node for this component with proxy flag
-                    CodeNode componentNode = new CodeNode("res:" + afterApps, afterApps,
+                    CodeNode componentNode = new CodeNode(com.dede.domain.model.ResourceTypes.nodeId(afterApps), afterApps,
                         NodeType.JCR_RESOURCE_TYPE, "Proxy to: " + superType, pathStr);
                     componentNode.getProperties().put("isProxy", "true");
                     componentNode.getProperties().put("sling:resourceSuperType", superType);
                     graphService.addNode(componentNode);
 
                     // Create relationship to super type
-                    CodeNode superTypeNode = new CodeNode("res:" + superType, superType,
+                    CodeNode superTypeNode = new CodeNode(com.dede.domain.model.ResourceTypes.nodeId(superType), superType,
                         NodeType.JCR_RESOURCE_TYPE, superType, null);
                     graphService.addNode(superTypeNode);
                     graphService.addEdge(componentNode, superTypeNode, RelationshipType.EXTENDS);

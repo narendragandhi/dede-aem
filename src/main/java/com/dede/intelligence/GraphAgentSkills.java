@@ -197,7 +197,7 @@ public class GraphAgentSkills {
     }
 
     public String traceSlingModel(String resourceType) {
-        return graphService.findNodeById("res:" + resourceType).map(node -> {
+        return graphService.findNodeById(com.dede.domain.model.ResourceTypes.nodeId(resourceType)).map(node -> {
             Set<CodeNode> models = graphService.getRelatedNodes(node, RelationshipType.ADAPTS_TO);
             if (models.isEmpty()) return "No Sling Model found for resource type: " + resourceType;
             

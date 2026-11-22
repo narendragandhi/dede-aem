@@ -69,6 +69,10 @@ public final class RuntimeOverlay {
     private Map<Path, List<MethodRange>> methodsByFile = Map.of();
     /** Class -> instrumented methods, from the agent config (--otel-config); empty when unknown. */
     private Map<String, java.util.Set<String>> instrumentedMethods = Map.of();
+    /** Failed requests followed to their origin span (needs trace ids); empty without them. */
+    private List<TraceChains.ErrorChain> errorChains = List.of();
+    /** Origin class names that are in the scanned code. */
+    private java.util.Set<String> chainProjectClasses = java.util.Set.of();
     private final int totalSpans;
     private final int unattributedSpans;
     private final long windowStartNanos;
@@ -134,6 +138,14 @@ public final class RuntimeOverlay {
         overlay.serverRequests = spans.stream().filter(s -> s.httpPath() != null)
             .map(s -> new RequestLogReader.RequestRecord(null, s.httpPath(), s.httpStatus(), s.durationNanos() / 1_000_000))
             .toList();
+        Map<String, Boolean> inProject = new HashMap<>();
+        java.util.function.Predicate<String> isProject =
+            name -> inProject.computeIfAbsent(name, n -> findClassNode(graph, n).isPresent());
+        overlay.errorChains = TraceChains.from(spans, isProject);
+        overlay.chainProjectClasses = overlay.errorChains.stream()
+            .map(TraceChains.ErrorChain::className)
+            .filter(c -> c != null && isProject.test(c))
+            .collect(java.util.stream.Collectors.toSet());
         return overlay;
     }
 
@@ -330,6 +342,22 @@ public final class RuntimeOverlay {
             row.put("methods", s.callsByMethod());
             return row;
         }).toList());
+        if (!errorChains.isEmpty()) {
+            summary.put("errorChains", errorChains.stream().limit(limit).map(c -> {
+                Map<String, Object> row = new LinkedHashMap<>();
+                row.put("route", c.route());
+                row.put("httpStatus", c.httpStatus());
+                row.put("count", c.count());
+                row.put("originClass", c.className());
+                row.put("originMethod", c.methodName());
+                row.put("inProject", c.className() != null && chainProjectClasses.contains(c.className()));
+                row.put("exceptionType", c.exceptionType());
+                row.put("exceptionMessage", c.exceptionMessage());
+                row.put("depth", c.depth());
+                row.put("sampleTraceId", c.sampleTraceId());
+                return row;
+            }).toList());
+        }
         summary.put("hotFindings", hotFindings(findings).stream().limit(limit).map(e -> {
             Map<String, Object> row = new LinkedHashMap<>();
             row.put("severity", e.getKey().severity());

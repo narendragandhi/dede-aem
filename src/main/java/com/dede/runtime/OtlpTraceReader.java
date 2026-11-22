@@ -33,12 +33,26 @@ public final class OtlpTraceReader {
     /**
      * One span reduced to what the overlay needs. {@code className} is null when unattributed.
      * {@code httpPath} is set on HTTP server spans only (the request path, no query string).
+     * {@code traceId}/{@code spanId}/{@code parentSpanId} link spans of one request (opaque strings:
+     * hex or base64, as the exporter wrote them); {@code exceptionType}/{@code exceptionMessage}
+     * come from the span's {@code exception} event, when it recorded one.
      */
     public record SpanRecord(String className, String methodName, long startNanos, long durationNanos,
-                             boolean error, String httpPath, int httpStatus) {
+                             boolean error, String httpPath, int httpStatus,
+                             String traceId, String spanId, String parentSpanId,
+                             String exceptionType, String exceptionMessage) {
         public SpanRecord(String className, String methodName, long startNanos, long durationNanos, boolean error) {
             this(className, methodName, startNanos, durationNanos, error, null, 0);
         }
+
+        public SpanRecord(String className, String methodName, long startNanos, long durationNanos,
+                          boolean error, String httpPath, int httpStatus) {
+            this(className, methodName, startNanos, durationNanos, error, httpPath, httpStatus,
+                null, null, null, null, null);
+        }
+
+        /** True for the request's entry span: an HTTP server span. */
+        public boolean isServer() { return httpPath != null; }
     }
 
     private OtlpTraceReader() {}
@@ -104,6 +118,8 @@ public final class OtlpTraceReader {
         String functionName = null;
         String urlPath = null;
         String httpTarget = null;
+        String urlFull = null;
+        String httpRoute = null;
         int status = 0;
         for (JsonNode attribute : span.path("attributes")) {
             String key = attribute.path("key").asText();
@@ -114,6 +130,8 @@ public final class OtlpTraceReader {
                 case "code.function" -> function = value;
                 case "code.function.name" -> functionName = value;
                 case "url.path" -> urlPath = value;                       // stable HTTP semconv
+                case "url.full" -> urlFull = value;
+                case "http.route" -> httpRoute = value;
                 case "http.target" -> httpTarget = value;                 // older semconv (path?query)
                 case "http.response.status_code", "http.status_code" ->
                     status = valueNode.path("intValue").asInt(valueNode.path("stringValue").asInt(0));
@@ -125,6 +143,14 @@ public final class OtlpTraceReader {
         String httpPath = null;
         if (server) {
             httpPath = urlPath != null ? urlPath : httpTarget;
+            if (httpPath == null && urlFull != null) {
+                try {
+                    httpPath = java.net.URI.create(urlFull).getPath();
+                } catch (IllegalArgumentException malformed) {
+                    httpPath = null;
+                }
+            }
+            if (httpPath == null) httpPath = httpRoute != null ? httpRoute : "/";   // still a request entry
             if (httpPath != null && httpPath.indexOf('?') >= 0) httpPath = httpPath.substring(0, httpPath.indexOf('?'));
         }
 
@@ -144,6 +170,29 @@ public final class OtlpTraceReader {
         long end = span.path("endTimeUnixNano").asLong(0);
         JsonNode statusCode = span.path("status").path("code");
         boolean error = statusCode.asInt(-1) == 2 || "STATUS_CODE_ERROR".equals(statusCode.asText());
-        return new SpanRecord(className, methodName, start, Math.max(0, end - start), error, httpPath, status);
+
+        // The Java agent records a thrown exception as a span event named "exception".
+        String exceptionType = null;
+        String exceptionMessage = null;
+        for (JsonNode event : span.path("events")) {
+            if (!"exception".equals(event.path("name").asText())) continue;
+            for (JsonNode attribute : event.path("attributes")) {
+                String value = attribute.path("value").path("stringValue").asText(null);
+                switch (attribute.path("key").asText()) {
+                    case "exception.type" -> exceptionType = value;
+                    case "exception.message" -> exceptionMessage = value;
+                    default -> { }
+                }
+            }
+            break;
+        }
+        return new SpanRecord(className, methodName, start, Math.max(0, end - start), error, httpPath, status,
+            text(span, "traceId"), text(span, "spanId"), text(span, "parentSpanId"), exceptionType, exceptionMessage);
+    }
+
+    /** A non-blank string field, else null (OTLP/JSON writes an absent parent as "" or omits it). */
+    private static String text(JsonNode node, String field) {
+        String value = node.path(field).asText(null);
+        return value == null || value.isBlank() ? null : value;
     }
 }

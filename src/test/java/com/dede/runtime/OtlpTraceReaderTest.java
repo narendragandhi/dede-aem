@@ -32,7 +32,7 @@ class OtlpTraceReaderTest {
 
         assertThat(spans).hasSize(3);
         assertThat(spans.get(0)).isEqualTo(new SpanRecord("com.acme.TeaserModel", "getTitle",
-            1_700_000_000_000_000_000L, 4_000_000L, false));
+            1_700_000_000_000_000_000L, 4_000_000L, false, null, 0, "a", "1", null, null, null));
         // HTTP server span: numeric timestamps, error status, but no code attributes.
         assertThat(spans.get(1).className()).isNull();
         assertThat(spans.get(1).durationNanos()).isEqualTo(50_000_000L);
